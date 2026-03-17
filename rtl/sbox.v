@@ -1,6 +1,6 @@
 module sbox (
-    input  wire [7:0] in,
-    output reg  [7:0] out
+    input  wire [7:0] byte_in,
+    output reg  [7:0] byte_out
 );
 
 always @(*) begin
