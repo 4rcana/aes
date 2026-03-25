@@ -7,8 +7,8 @@ module sub_bytes (
     generate
         for (i = 0; i < 16; i = i + 1) begin : sbox_inst
             sbox u_sbox (
-                .in  (in  [127 - i*8 -: 8]),
-                .out (out [127 - i*8 -: 8])
+                .byte_in  (in  [127 - i*8 -: 8]),
+                .byte_out (out [127 - i*8 -: 8])
             );
         end
     endgenerate

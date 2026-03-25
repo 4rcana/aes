@@ -1,5 +1,3 @@
-// CHECK THIS MODULE, SHIT WAS VIBECODED
-
 module aes_key_schedule_iterative #(
     parameter KEY_BITS = 128
 )(
@@ -12,9 +10,9 @@ module aes_key_schedule_iterative #(
     output reg                   key_ready
 );
 
-localparam Nk      = KEY_BITS / 32;
-localparam Nr      = Nk + 6;
-localparam TOTAL_W = (Nr + 1) * 4;
+localparam [3:0] Nk      = 4'(KEY_BITS / 32);
+localparam [3:0] Nr      = Nk + 6;
+localparam [5:0] TOTAL_W = ({2'b00, Nr} + 1) * 4;
 
 // ---------------------------------------------------------------
 // Rcon — function is fine here, pure LUT with no module deps
@@ -35,10 +33,9 @@ function [31:0] rcon;
 endfunction
 
 // ---------------------------------------------------------------
-// Word and key storage
+// Word storage
 // ---------------------------------------------------------------
 reg [31:0]  w      [0:TOTAL_W-1];
-reg [127:0] key_mem[0:Nr];
 reg [5:0]   word_idx;
 reg         expanding;
 
@@ -63,13 +60,13 @@ sub_word u_sw (
 //
 // rot_word is a wire — no logic, just byte reorder of w[word_idx-1]
 // ---------------------------------------------------------------
-wire [31:0] w_prev     = w[word_idx - 1];
-wire [31:0] w_nk       = w[word_idx - Nk];
+wire [31:0] w_prev     = expanding ? w[word_idx - 1]  : 32'h0;
+wire [31:0] w_nk       = expanding ? w[word_idx - {2'b00, Nk}] : 32'h0;
 wire [31:0] w_prev_rot = { w_prev[23:0], w_prev[31:24] };
 
 // These two signals select which branch we're on
-wire        is_nk_boundary = (word_idx % Nk == 0);
-wire        is_nk_midpoint = (KEY_BITS == 256) && (word_idx % Nk == 4);
+wire        is_nk_boundary = (word_idx % {2'b00, Nk} == 0);
+wire        is_nk_midpoint = (KEY_BITS == 256) && (word_idx % {2'b00, Nk} == 4);
 
 reg  [31:0] new_word;
 
@@ -85,7 +82,7 @@ always @(*) begin
 
     // Compute new_word from the appropriate branch
     if (is_nk_boundary)
-        new_word = w_nk ^ sw_out ^ rcon(word_idx / Nk);
+        new_word = w_nk ^ sw_out ^ rcon(4'(word_idx / Nk));
     else if (is_nk_midpoint)
         new_word = w_nk ^ sw_out;
     else
@@ -106,23 +103,13 @@ always @(posedge clk or negedge rst_n) begin
     else if (load) begin
         for (j = 0; j < Nk; j = j + 1)
             w[j] <= key_in[KEY_BITS-1 - j*32 -: 32];
-        key_mem[0]  <= key_in[KEY_BITS-1 -: 128];
-        word_idx    <= Nk;
+        word_idx    <= {2'b00, Nk};
         expanding   <= 1;
         key_ready   <= 0;
     end
-    // if Nk = 8, key_mem[0] gets set and key_mem[1] is skipped because
-    // 6'd8 = 6'b001000 and key_mem[word_idx[5:2]] is key_mem[4'b0010]
     else if (expanding) begin
         // Register the combinationally resolved word
         w[word_idx] <= new_word;
-
-        // Every 4th word completes a round key
-        if (word_idx[1:0] == 2'b11)
-            key_mem[word_idx[5:2]] <= { w[word_idx-3],
-                                        w[word_idx-2],
-                                        w[word_idx-1],
-                                        new_word };
 
         if (word_idx == TOTAL_W - 1) begin
             expanding <= 0;
@@ -132,7 +119,12 @@ always @(posedge clk or negedge rst_n) begin
     end
 end
 
-always @(posedge clk)
-    round_key <= key_mem[round_num];
+// multiply by 4 = left shift by 2, no multiplier inferred
+wire [5:0] rk_base = { round_num, 2'b00 };
 
+always @(posedge clk)
+    round_key <= { w[rk_base],
+                   w[rk_base + 1],
+                   w[rk_base + 2],
+                   w[rk_base + 3] };
 endmodule
