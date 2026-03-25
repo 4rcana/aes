@@ -1,2 +1,2 @@
-rtl/tb/cpp/obj_dir/
-rtl/tb/cpp/*.vcd
+tb/cpp/obj_dir/
+tb/cpp/*.vcd
