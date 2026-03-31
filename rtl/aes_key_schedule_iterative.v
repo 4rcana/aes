@@ -6,7 +6,7 @@ module aes_key_schedule_iterative #(
     input  wire                  load,
     input  wire [KEY_BITS-1:0]   key_in,
     input  wire [3:0]            round_num,
-    output reg  [127:0]          round_key,
+    output wire [127:0]          round_key,
     output reg                   key_ready
 );
 
@@ -122,9 +122,6 @@ end
 // multiply by 4 = left shift by 2, no multiplier inferred
 wire [5:0] rk_base = { round_num, 2'b00 };
 
-always @(posedge clk)
-    round_key <= { w[rk_base],
-                   w[rk_base + 1],
-                   w[rk_base + 2],
-                   w[rk_base + 3] };
+assign round_key = { w[rk_base], w[rk_base+1], w[rk_base+2], w[rk_base+3] };
+
 endmodule

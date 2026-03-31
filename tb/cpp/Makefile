@@ -6,11 +6,11 @@ KEY_BITS ?= 128
 TOP_MODULE = aes_top
 
 # Source files
-V_SRCS     = ../../$(TOP_MODULE).v
+V_SRCS     = ../../rtl/$(TOP_MODULE).v
 CPP_SRCS   = tb_aes_top_iterative.cpp
 
 # Directories to search for missing Verilog files (e.g., parent directory)
-INC_DIRS   = -y ../..
+INC_DIRS   = -y ../../rtl
 
 # Verilator flags
 VFLAGS     = --cc --exe --build -j 0 --trace
