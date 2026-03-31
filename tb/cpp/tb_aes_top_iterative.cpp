@@ -11,6 +11,8 @@
 #define KEY_BITS 128
 #endif
 
+#include "vectors.h"
+
 vluint64_t main_time = 0;
 
 void tick(Vaes_top* dut, VerilatedVcdC* tfp) {
@@ -70,17 +72,7 @@ bool run_test(Vaes_top* dut, VerilatedVcdC* tfp,
     return pass;
 }
 
-// ---------------------------------------------------------------
-// Test vectors — 128 VarKey + 21 KeySbox + 7 GFSbox + 128 VarTxt = 284 total
-// Words packed MSB-first: key[0]=most significant word
-// ---------------------------------------------------------------
-struct TestVector {
-    uint32_t key[4];
-    uint32_t pt[4];
-    uint32_t ct[4];
-    const char* name;
-};
-
+/*
 static const TestVector vectors[] = {
     { {0x80000000u,0x00000000u,0x00000000u,0x00000000u},
       {0x00000000u,0x00000000u,0x00000000u,0x00000000u},
@@ -1222,6 +1214,7 @@ static const TestVector vectors[] = {
 };
 
 static const int NUM_VECTORS = 284;
+*/
 
 int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
