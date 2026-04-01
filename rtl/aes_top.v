@@ -19,6 +19,7 @@ module aes_top #(
 	localparam [3:0] Nr = 4'((KEY_BITS / 32) + 6);
 
 	wire [127:0] enc_round_key;
+    wire [127:0] dec_round_key;
 //	wire         key_ready;     VERILATOR NEEDS TO SEE THIS
 	wire [127:0] enc_round_out;
 	reg  [127:0] enc_state;
@@ -34,6 +35,7 @@ module aes_top #(
 	    .enc_round_num  (enc_round_num),
         .dec_round_num  (dec_round_num),
 	    .enc_round_key  (enc_round_key),
+        .dec_round_key  (dec_round_key),
 	    .key_ready      (key_ready)
 	);
 

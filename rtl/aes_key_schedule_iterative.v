@@ -124,9 +124,9 @@ always @(posedge clk or negedge rst_n) begin
 end
 
 // multiply by 4 = left shift by 2, no multiplier inferred
-wire [5:0] rk_base = { round_num, 2'b00 };
+wire [5:0] enc_rk_base = { enc_round_num, 2'b00 };
 
-assign round_key = { w_enc[rk_base], w_enc[rk_base+1],
-                     w_enc[rk_base+2], w_enc[rk_base+3] };
+assign enc_round_key = { w_enc[enc_rk_base], w_enc[enc_rk_base+1],
+                         w_enc[enc_rk_base+2], w_enc[enc_rk_base+3] };
 
 endmodule
