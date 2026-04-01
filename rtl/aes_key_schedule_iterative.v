@@ -5,8 +5,10 @@ module aes_key_schedule_iterative #(
     input  wire                  rst_n,
     input  wire                  load,
     input  wire [KEY_BITS-1:0]   key_in,
-    input  wire [3:0]            round_num,
-    output wire [127:0]          round_key,
+    input  wire [3:0]            enc_round_num,
+    input  wire [3:0]            dec_round_num,
+    output wire [127:0]          enc_round_key,
+    output wire [127:0]          dec_round_key,
     output reg                   key_ready
 );
 
@@ -35,10 +37,12 @@ endfunction
 // ---------------------------------------------------------------
 // Word storage
 // ---------------------------------------------------------------
-reg [31:0]  w      [0:TOTAL_W-1];
+reg [31:0]  w_enc      [0:TOTAL_W-1];
 reg [5:0]   word_idx;
 reg         expanding;
 
+// Instatiating different module for inv_sub_word seems pretty dumb,
+// think about best implementation.
 // ---------------------------------------------------------------
 // sub_word instance — single shared instance, driven by sw_in
 // ---------------------------------------------------------------
@@ -60,8 +64,8 @@ sub_word u_sw (
 //
 // rot_word is a wire — no logic, just byte reorder of w[word_idx-1]
 // ---------------------------------------------------------------
-wire [31:0] w_prev     = expanding ? w[word_idx - 1]  : 32'h0;
-wire [31:0] w_nk       = expanding ? w[word_idx - {2'b00, Nk}] : 32'h0;
+wire [31:0] w_prev     = expanding ? w_enc[word_idx - 1]  : 32'h0;
+wire [31:0] w_nk       = expanding ? w_enc[word_idx - {2'b00, Nk}] : 32'h0;
 wire [31:0] w_prev_rot = { w_prev[23:0], w_prev[31:24] };
 
 // These two signals select which branch we're on
@@ -102,14 +106,14 @@ always @(posedge clk or negedge rst_n) begin
     end
     else if (load) begin
         for (j = 0; j < Nk; j = j + 1)
-            w[j] <= key_in[KEY_BITS-1 - j*32 -: 32];
+            w_enc[j] <= key_in[KEY_BITS-1 - j*32 -: 32];
         word_idx    <= {2'b00, Nk};
         expanding   <= 1;
         key_ready   <= 0;
     end
     else if (expanding) begin
         // Register the combinationally resolved word
-        w[word_idx] <= new_word;
+        w_enc[word_idx] <= new_word;
 
         if (word_idx == TOTAL_W - 1) begin
             expanding <= 0;
@@ -122,6 +126,7 @@ end
 // multiply by 4 = left shift by 2, no multiplier inferred
 wire [5:0] rk_base = { round_num, 2'b00 };
 
-assign round_key = { w[rk_base], w[rk_base+1], w[rk_base+2], w[rk_base+3] };
+assign round_key = { w_enc[rk_base], w_enc[rk_base+1],
+                     w_enc[rk_base+2], w_enc[rk_base+3] };
 
 endmodule

@@ -1,12 +1,17 @@
 # --- Variables ---
 # Default key size (can be overridden via: make KEY_BITS=256)
-KEY_BITS ?= 128
+KEY_BITS ?= 256
 
 # Top-level Verilog module name (determines the executable name)
 TOP_MODULE = aes_top
 
 # Source files
-V_SRCS     = ../../rtl/$(TOP_MODULE).v
+V_SRCS      = ../../rtl/sbox.v
+V_SRCS     += ../../rtl/shift_rows.v
+V_SRCS     += ../../rtl/mix_columns.v
+V_SRCS     += ../../rtl/aes_round.v
+V_SRCS     += ../../rtl/aes_key_schedule_iterative.v
+V_SRCS     += ../../rtl/$(TOP_MODULE).v
 CPP_SRCS   = tb_aes_top_iterative.cpp
 
 # Directories to search for missing Verilog files (e.g., parent directory)
@@ -15,6 +20,7 @@ INC_DIRS   = -y ../../rtl
 # Verilator flags
 VFLAGS     = --cc --exe --build -j 0 --trace
 VFLAGS    += $(INC_DIRS)
+VFLAGS    += --top-module $(TOP_MODULE)
 VFLAGS    += -GKEY_BITS=$(KEY_BITS)
 VFLAGS    += -CFLAGS "-DKEY_BITS=$(KEY_BITS)"
 VFLAGS	  += --trace-max-array 1024
