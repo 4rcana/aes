@@ -34,7 +34,7 @@ module aes_dec_round #(
 )(
     input  wire [3:0]   round_num,
     input  wire [127:0] state_in,
-    input  wire [127:0] round_key_transformed,
+    input  wire [127:0] round_key,
     output wire [127:0] state_out
 );
 

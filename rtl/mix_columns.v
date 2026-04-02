@@ -109,6 +109,6 @@ module inv_mix_single_col (
     assign out[31:24] = mul(s0, 4'he) ^ mul(s1, 4'hb) ^ mul(s2, 4'hd) ^ mul(s3, 4'h9);
     assign out[23:16] = mul(s0, 4'h9) ^ mul(s1, 4'he) ^ mul(s2, 4'hb) ^ mul(s3, 4'hd);
     assign out[15:8]  = mul(s0, 4'hd) ^ mul(s1, 4'h9) ^ mul(s2, 4'he) ^ mul(s3, 4'hb);
-    assign out[7:0]   = mul(s0, 4'hb) ^ mul(s1, 4'hd) ^ mul(s2, 4'h9) ^ mul(s3, 3'he);
+    assign out[7:0]   = mul(s0, 4'hb) ^ mul(s1, 4'hd) ^ mul(s2, 4'h9) ^ mul(s3, 4'he);
 
 endmodule

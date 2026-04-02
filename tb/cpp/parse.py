@@ -1,3 +1,6 @@
+# Parser usage example:
+# python parse.py KAT_AES/ECB*128.rsp > vectors.h
+
 import sys
 import os
 import re
