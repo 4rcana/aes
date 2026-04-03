@@ -1,6 +1,6 @@
 # --- Variables ---
 # Default key size (can be overridden via: make KEY_BITS=256)
-KEY_BITS ?= 192
+KEY_BITS ?= 256
 
 # Top-level Verilog module name (determines the executable name)
 TOP_MODULE = aes_top
@@ -11,6 +11,7 @@ V_SRCS     += ../../rtl/shift_rows.v
 V_SRCS     += ../../rtl/mix_columns.v
 V_SRCS     += ../../rtl/aes_round.v
 V_SRCS     += ../../rtl/aes_key_schedule_iterative.v
+V_SRCS	   += ../../rtl/aes_core_iterative.v
 V_SRCS     += ../../rtl/$(TOP_MODULE).v
 CPP_SRCS    = tb_aes_top_iterative.cpp
 

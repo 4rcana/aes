@@ -37,18 +37,9 @@ endfunction
 // ---------------------------------------------------------------
 // Word storage
 // ---------------------------------------------------------------
-reg [31:0]  w_enc      [0:TOTAL_W-1];
-reg [31:0]  w_dec      [0:TOTAL_W-1];
+reg [31:0]  word      [0:TOTAL_W-1];
 reg [5:0]   word_idx;
 reg         expanding;
-
-// ---------------------------------------------------------------
-// Input Selection 
-// ---------------------------------------------------------------
-// For word_idx < Nk, we use the input key directly.
-// For word_idx >= Nk, we use the generated 'new_word'.
-wire [31:0] key_in_slice = key_in[KEY_BITS-1 - word_idx*32 -: 32];
-wire [31:0] current_raw_word = (word_idx < {2'b00, Nk}) ? key_in_slice : new_word;
 
 // ---------------------------------------------------------------
 // sub_word instance — single shared instance, driven by sw_in
@@ -71,8 +62,8 @@ sub_word u_sw (
 //
 // rot_word is a wire — no logic, just byte reorder of w[word_idx-1]
 // ---------------------------------------------------------------
-wire [31:0] w_prev     = expanding ? w_enc[word_idx - 1]  : 32'h0;
-wire [31:0] w_nk       = expanding ? w_enc[word_idx - {2'b00, Nk}] : 32'h0;
+wire [31:0] w_prev     = expanding ? word[word_idx - 1]  : 32'h0;
+wire [31:0] w_nk       = expanding ? word[word_idx - {2'b00, Nk}] : 32'h0;
 wire [31:0] w_prev_rot = { w_prev[23:0], w_prev[31:24] };
 
 // These two signals select which branch we're on
@@ -101,21 +92,12 @@ always @(*) begin
 end
 
 // ---------------------------------------------------------------
-// inv_mix_single_col instance — single shared instance, driven by new_word
+// Input Selection 
 // ---------------------------------------------------------------
-wire [31:0] transformed_word;
-
-inv_mix_single_col u_inv_msc (
-    .in(current_raw_word),
-    .out(transformed_word)
-);
-
-// Equivalent Inverse Cipher Rule:
-// Round 0 (words 0-3) and Round Nr (last 4 words) stay RAW.
-// Intermediate rounds (words 4 to Nr*4 - 1) are TRANSFORMED.
-wire is_first_key = (word_idx < 6'd4);
-wire is_last_key  = (word_idx >= ({2'b00, Nr} << 2));
-wire is_raw_zone  = is_first_key || is_last_key;
+// For word_idx < Nk, we use the input key directly.
+// For word_idx >= Nk, we use the generated 'new_word'.
+wire [31:0] key_in_slice = key_in[KEY_BITS-1 - word_idx*32 -: 32];
+wire [31:0] current_raw_word = (word_idx < {2'b00, Nk}) ? key_in_slice : new_word;
 
 // ---------------------------------------------------------------
 // Sequential logic — one word generated per clock cycle
@@ -132,9 +114,7 @@ always @(posedge clk or negedge rst_n) begin
         key_ready   <= 0;
     end
     else if (expanding) begin
-        w_enc[word_idx] <= current_raw_word;
-        w_dec[word_idx] <= is_raw_zone ? current_raw_word : transformed_word;
-
+        word[word_idx] <= current_raw_word;
         if (word_idx == TOTAL_W - 1) begin
             expanding <= 0;
             key_ready <= 1;
@@ -147,11 +127,30 @@ end
 wire [5:0] enc_rk_base = { enc_round_num, 2'b00 };
 // round key order should be reversed for decryption
 wire [5:0] dec_rk_base = { Nr - dec_round_num, 2'b00 };
+// Rule: Intermediate rounds (dec_round_num 1 to Nr-1) must be transformed.
+// Round 0 (provides KNr) and Round Nr (provides K0) stay RAW.
+wire dec_needs_transform = (dec_round_num > 0) && (dec_round_num < Nr);
 
-assign enc_round_key = { w_enc[enc_rk_base],   w_enc[enc_rk_base+1],
-                         w_enc[enc_rk_base+2], w_enc[enc_rk_base+3] };
+// ---------------------------------------------------------------
+// Inverse mix columns
+// ---------------------------------------------------------------
+wire [31:0] mixed_w0;
+wire [31:0] mixed_w1;
+wire [31:0] mixed_w2;
+wire [31:0] mixed_w3;
 
-assign dec_round_key = { w_dec[dec_rk_base],   w_dec[dec_rk_base+1],
-                         w_dec[dec_rk_base+2], w_dec[dec_rk_base+3] };
+inv_mix_columns u_inv_mc (
+    .in({word[dec_rk_base],     word[dec_rk_base + 1],
+         word[dec_rk_base + 2], word[dec_rk_base + 3]}),
+    .out({mixed_w0, mixed_w1, mixed_w2, mixed_w3})
+);
+
+assign enc_round_key = { word[enc_rk_base],   word[enc_rk_base+1],
+                         word[enc_rk_base+2], word[enc_rk_base+3] };
+
+assign dec_round_key = dec_needs_transform ? 
+                       { mixed_w0, mixed_w1, mixed_w2, mixed_w3 } :
+                       { word[dec_rk_base],   word[dec_rk_base+1],
+                         word[dec_rk_base+2], word[dec_rk_base+3] };
 
 endmodule
