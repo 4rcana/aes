@@ -1,9 +1,9 @@
 module aes_top #(
-    parameter TARGET = "FPGA",  // FPGA - uses SBOX LUT, ASIC - computes SBOX values on-the-go.
-    parameter KEY_BITS = 128,   // 128, 192, 256.
-    parameter PIPE_DEPTH = 1,   // PIPELINED DESIGN NOT YET IMPLEMENTED.
-    parameter DUPLEX = "FULL",  // HALF-DUPLEX is slower but takes up alot less space, NOT YET IMPLEMENTED.
-    parameter MODE = "ECB"
+    parameter SBOX_IMPL  = "GF4",   // LUT, GF4, GF2. 
+    parameter KEY_BITS   = 128,     // 128, 192, 256.
+    parameter PIPE_DEPTH = 1,       // PIPELINED DESIGN NOT YET IMPLEMENTED.
+    parameter DUPLEX     = "FULL",  // HALF-DUPLEX is slower but takes up alot less space, NOT YET IMPLEMENTED.
+    parameter MODE       = "ECB"
 )(
     input  wire                clk,
     input  wire                rst_n,
@@ -29,8 +29,9 @@ module aes_top #(
     generate
         if (PIPE_DEPTH == 1) begin : ARCH_ITERATIVE
             aes_core_iterative #(
+                .SBOX_IMPL(SBOX_IMPL),
                 .KEY_BITS(KEY_BITS),
-                .TARGET(TARGET)
+                .DUPLEX(DUPLEX)
             ) u_core (
                 .clk(clk), .rst_n(rst_n),
                 .key_load(key_load), .key_in(key_in), .key_ready(key_ready),

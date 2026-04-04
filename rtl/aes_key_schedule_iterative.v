@@ -1,5 +1,6 @@
 module aes_key_schedule_iterative #(
-    parameter KEY_BITS = 128
+    parameter KEY_BITS  = 128,
+    parameter SBOX_IMPL = "LUT"
 )(
     input  wire                  clk,
     input  wire                  rst_n,
@@ -42,14 +43,18 @@ reg [5:0]   word_idx;
 reg         expanding;
 
 // ---------------------------------------------------------------
-// sub_word instance — single shared instance, driven by sw_in
+// sub_word_generic instance — single shared instance, driven by sw_in
 // ---------------------------------------------------------------
 reg  [31:0] sw_in;
 wire [31:0] sw_out;
 
-sub_word u_sw (
-    .word_in  (sw_in),
-    .word_out (sw_out)
+sub_word_generic #(
+    .SBOX_IMPL(SBOX_IMPL),
+    .DIRECTION("FORWARD")
+) u_sw (
+    .in  (sw_in),
+    .mode(1'b0),    // 0: FORWARD
+    .out (sw_out)
 );
 
 // ---------------------------------------------------------------

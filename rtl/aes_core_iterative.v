@@ -1,6 +1,7 @@
 module aes_core_iterative #(
-    parameter KEY_BITS = 128,
-    parameter TARGET   = "FPGA"
+    parameter SBOX_IMPL = "LUT",
+    parameter KEY_BITS  = 128,
+    parameter DUPLEX    = "FULL"
 )(
     input  wire                clk,
     input  wire                rst_n,
@@ -59,14 +60,14 @@ module aes_core_iterative #(
     // ---------------------------------------------------------
     // Datapath Instantiations
     // ---------------------------------------------------------
-    aes_enc_round #(.KEY_BITS(KEY_BITS)) u_eround (
+    aes_enc_round # (.KEY_BITS(KEY_BITS), .SBOX_IMPL(SBOX_IMPL)) u_eround (
         .round_num  (enc_round_num),
         .state_in   (enc_state),
         .round_key  (enc_round_key),
         .state_out  (enc_round_out)
     );
 
-    aes_dec_round #(.KEY_BITS(KEY_BITS)) u_dround (
+    aes_dec_round # (.KEY_BITS(KEY_BITS), .SBOX_IMPL(SBOX_IMPL)) u_dround (
         .round_num  (dec_round_num),
         .state_in   (dec_state),
         .round_key  (dec_round_key),

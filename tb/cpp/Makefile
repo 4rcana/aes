@@ -1,6 +1,6 @@
 # --- Variables ---
 # Default key size (can be overridden via: make KEY_BITS=256)
-KEY_BITS ?= 256
+KEY_BITS ?= 128
 
 # Top-level Verilog module name (determines the executable name)
 TOP_MODULE = aes_top
