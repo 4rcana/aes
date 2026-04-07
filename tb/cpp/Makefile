@@ -1,54 +1,78 @@
-# --- Variables ---
-# Default key size (can be overridden via: make KEY_BITS=256)
-KEY_BITS ?= 128
+# --- Parameters (Default values) ---
+KEY_BITS   ?= 128
+SBOX_IMPL  ?= LUT
+DUPLEX     ?= HALF
+PIPE_DEPTH ?= 1
+MODE       ?= ECB
 
-# Top-level Verilog module name (determines the executable name)
-TOP_MODULE = aes_top
+# --- File Paths ---
+TOP_MODULE   = aes_top
+V_DIR        = ../../rtl
+VECTOR_DIR   = ./KAT_AES
+PARSE_SCRIPT = ./parser.py
+VECTORS_H    = vectors.h
 
-# Source files
-V_SRCS      = ../../rtl/sbox.v
-V_SRCS     += ../../rtl/shift_rows.v
-V_SRCS     += ../../rtl/mix_columns.v
-V_SRCS     += ../../rtl/aes_round.v
-V_SRCS     += ../../rtl/aes_key_schedule_iterative.v
-V_SRCS	   += ../../rtl/aes_core_iterative.v
-V_SRCS     += ../../rtl/$(TOP_MODULE).v
+# --- Tool Configuration ---
+PYTHON = python
+VERILATOR = verilator
+
+# --- Source Files ---
+V_SRCS      = $(V_DIR)/sbox.v \
+              $(V_DIR)/shift_rows.v \
+              $(V_DIR)/mix_columns.v \
+              $(V_DIR)/aes_round.v \
+              $(V_DIR)/aes_key_schedule_iterative.v \
+              $(V_DIR)/aes_core_iterative.v \
+              $(V_DIR)/$(TOP_MODULE).v
 CPP_SRCS    = tb_aes_top_iterative.cpp
 
-# Directories to search for missing Verilog files (e.g., parent directory)
-INC_DIRS   = -y ../../rtl
-
-# Verilator flags
-VFLAGS     = --cc --exe --build -j 0 --trace
-VFLAGS    += $(INC_DIRS)
-VFLAGS    += --top-module $(TOP_MODULE)
-VFLAGS    += -GKEY_BITS=$(KEY_BITS)
-VFLAGS    += -CFLAGS "-DKEY_BITS=$(KEY_BITS)"
-VFLAGS	  += --trace-max-array 1024
+# --- Verilator Flags ---
+VFLAGS      = --cc --exe --build -j 0 --trace
+VFLAGS     += -y $(V_DIR)
+VFLAGS     += --top-module $(TOP_MODULE)
+VFLAGS     += --trace-max-array 1024
+VFLAGS     += -GKEY_BITS=$(KEY_BITS) -GSBOX_IMPL=\"$(SBOX_IMPL)\" -GDUPLEX=\"$(DUPLEX)\"
+VFLAGS     += -CFLAGS "-DKEY_BITS=$(KEY_BITS) -DSBOX_IMPL=\"$(SBOX_IMPL)\" -DDUPLEX=\"$(DUPLEX)\""
 
 # The generated executable
 TARGET     = obj_dir/V$(TOP_MODULE)
 
 # --- Targets ---
-.PHONY: all build run clean
+.PHONY: all build run clean help
 
-# Default target: build and run
 all: build run
 
-# 1. Run Verilator to generate C++ code and compile the executable
-build: $(TARGET)
+# 1. Logic to generate the header file via Python
+# This rule looks for any .rsp files in the KAT folder that match the current KEY_BITS
+$(VECTORS_H): $(PARSE_SCRIPT)
+	@echo "--- Generating Test Vectors for AES-$(KEY_BITS) ---"
+	$(PYTHON) $(PARSE_SCRIPT) $(VECTOR_DIR)/$(MODE)*$(KEY_BITS).rsp > $(VECTORS_H)
 
-$(TARGET): $(V_SRCS) $(CPP_SRCS)
-	@echo "--- Building for KEY_BITS=$(KEY_BITS) ---"
-	verilator $(VFLAGS) $(V_SRCS) $(CPP_SRCS)
+# 2. Build depends on vectors.h
+build: $(VECTORS_H) $(TARGET)
 
-# 2. Run the generated simulation
+$(TARGET): $(V_SRCS) $(CPP_SRCS) $(VECTORS_H)
+	@echo "--- Building Simulation ---"
+	$(VERILATOR) $(VFLAGS) $(V_SRCS) $(CPP_SRCS)
+
+# 3. Run
 run: $(TARGET)
 	@echo "--- Running Simulation ---"
 	./$(TARGET)
 
-# 3. Clean up build files and waveforms
+# 4. Help
+help:
+	@echo "Usage: make [PARAMETER=VALUE]"
+	@echo ""
+	@echo "Available Parameters:"
+	@echo "  KEY_BITS   : 128, 192, 256  (Default: 128)"
+	@echo "  SBOX_IMPL  : LUT, CANRIGHT  (Default: LUT)"
+	@echo "  DUPLEX     : HALF, FULL     (Default: HALF)"
+	@echo "  PIPE_DEPTH : 1              (Default: 1)"
+	@echo "  MODE       : ECB            (Default: ECB)"
+
+# 5. Cleanup
 clean:
-	@echo "--- Cleaning up ---"
 	rm -rf obj_dir
 	rm -f *.vcd
+	rm -f $(VECTORS_H)

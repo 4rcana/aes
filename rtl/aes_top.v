@@ -1,9 +1,9 @@
 module aes_top #(
-    parameter SBOX_IMPL  = "GF4",   // LUT, GF4, GF2. 
-    parameter KEY_BITS   = 128,     // 128, 192, 256.
-    parameter PIPE_DEPTH = 1,       // PIPELINED DESIGN NOT YET IMPLEMENTED.
-    parameter DUPLEX     = "FULL",  // HALF-DUPLEX is slower but takes up alot less space, NOT YET IMPLEMENTED.
-    parameter MODE       = "ECB"
+    parameter [63:0] SBOX_IMPL  = "LUT",       // LUT, CANRIGHT. 
+    parameter        KEY_BITS   = 128,         // 128, 192, 256.
+    parameter        PIPE_DEPTH = 1,           // PIPELINED DESIGN NOT YET IMPLEMENTED.
+    parameter [63:0] DUPLEX     = "HALF",      // HALF, FULL
+    parameter [63:0] MODE       = "ECB"        // DIFFERENT MODES NOT YET IMPLEMENTED.
 )(
     input  wire                clk,
     input  wire                rst_n,

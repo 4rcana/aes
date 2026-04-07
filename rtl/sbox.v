@@ -1,44 +1,25 @@
 // ----------------------------------------------------------------
-//                  Generic single block substitution
+//                  Generic N-bit Substitution
 // ----------------------------------------------------------------
-module sub_bytes_generic #(
-    parameter SBOX_IMPL = "LUT",      // "LUT", "GF4", "GF2"
-    parameter DIRECTION = "FORWARD"   // "FORWARD", "INVERSE", "SHARED"
+module sub_generic #(
+    parameter [63:0]  SBOX_IMPL = "LUT",
+    parameter [63:0]  DIRECTION = "FORWARD",
+    parameter integer WIDTH     = 128
 )(
-    input  wire [127:0] in,
-    input  wire         mode,         // 0:FORWARD, 1:INVERSE
-    output wire [127:0] out
+    input  wire [WIDTH-1:0] in,
+    input  wire             mode,         // 0:FORWARD, 1:INVERSE
+    output wire [WIDTH-1:0] out
 );
     genvar i;
     generate
-        for (i = 0; i < 16; i = i + 1) begin : sbox_loop
-            sbox_generic #(.SBOX_IMPL(SBOX_IMPL), .DIRECTION(DIRECTION)) u_sb (
-                .in  (in [127 - i*8 -: 8]),
+        for (i = 0; i < (WIDTH/8); i = i + 1) begin : sbox_loop
+            sbox_generic #(
+                .SBOX_IMPL(SBOX_IMPL), 
+                .DIRECTION(DIRECTION)
+            ) u_sb (
+                .in  (in [(WIDTH - 1) - i*8 -: 8]),
                 .mode(mode),
-                .out (out[127 - i*8 -: 8])
-            );
-        end
-    endgenerate
-endmodule
-
-// ----------------------------------------------------------------
-//                  Generic single word substitution
-// ----------------------------------------------------------------
-module sub_word_generic #(
-    parameter SBOX_IMPL = "LUT",      // "LUT", "GF4", "GF2"
-    parameter DIRECTION = "FORWARD"   // "FORWARD", "INVERSE", "SHARED"
-)(
-    input  wire [31:0] in,
-    input  wire        mode,          // 0:FORWARD, 1:INVERSE
-    output wire [31:0] out
-);
-    genvar i;
-    generate
-        for (i = 0; i < 4; i = i + 1) begin : sbox_loop
-            sbox_generic #(.SBOX_IMPL(SBOX_IMPL), .DIRECTION(DIRECTION)) u_sw (
-                .in  (in [31 - i*8 -: 8]),
-                .mode(mode),
-                .out (out[31 - i*8 -: 8])
+                .out (out[(WIDTH - 1) - i*8 -: 8])
             );
         end
     endgenerate
@@ -48,8 +29,8 @@ endmodule
 //                  Generic single byte SBOX
 // ----------------------------------------------------------------
 module sbox_generic #(
-    parameter SBOX_IMPL = "LUT",      // "LUT", "GF4", "GF2"
-    parameter DIRECTION = "FORWARD"   // "FORWARD", "INVERSE", "SHARED"
+    parameter [63:0] SBOX_IMPL = "LUT",      // "LUT", "CANRIGHT"
+    parameter [63:0] DIRECTION = "FORWARD"   // "FORWARD", "INVERSE", "SHARED"
 )(
     input  wire [7:0] in,
     input  wire       mode,           // 0:FORWARD, 1:INVERSE
@@ -58,112 +39,45 @@ module sbox_generic #(
     wire _unused = &{1'b0, mode, 1'b0};
 
     generate
+        // --- 1. LUT ARCHITECTURE ---
         if (SBOX_IMPL == "LUT") begin : ARCH_LUT
             wire [7:0] fwd_res, inv_res;
-            if (DIRECTION != "INVERSE") sbox_lut     u_fwd (.in(in), .out(fwd_res));
-            if (DIRECTION != "FORWARD") inv_sbox_lut u_inv (.in(in), .out(inv_res));
+            
+            // Explicitly handle instantiation to avoid floating wires
+            if (DIRECTION == "FORWARD" || DIRECTION == "SHARED") begin : GEN_FWD_LUT
+                sbox_lut u_fwd (.in(in), .out(fwd_res));
+            end else begin : GEN_FWD_TIE
+                assign fwd_res = 8'h00; // Tie off if not built
+            end
 
-            if      (DIRECTION == "FORWARD") assign out = fwd_res;
+            if (DIRECTION == "INVERSE" || DIRECTION == "SHARED") begin : GEN_INV_LUT
+                inv_sbox_lut u_inv (.in(in), .out(inv_res));
+            end else begin : GEN_INV_TIE
+                assign inv_res = 8'h00; // Tie off if not built
+            end
+
+            // Final output mapping
+            if (DIRECTION == "FORWARD")      assign out = fwd_res;
             else if (DIRECTION == "INVERSE") assign out = inv_res;
             else                             assign out = mode ? inv_res : fwd_res;
         end 
-        else if (SBOX_IMPL == "GF4") begin : ARCH_GF4
-            sbox_logic_gf4 u_logic (.in(in), .mode(mode), .out(out));
-        end
-        else begin : ARCH_GF2
-            sbox_logic_gf2 #(.DIRECTION(DIRECTION)) u_logic (.in(in), .mode(mode), .out(out));
+
+        // --- 2. CANRIGHT ARCHITECTURE ---
+        else if (SBOX_IMPL == "CANRIGHT") begin : ARCH_CANRIGHT
+            wire canright_mode;
+            
+            if (DIRECTION == "FORWARD") begin : GEN_MODE_FWD
+                assign canright_mode = 1'b0;
+            end else if (DIRECTION == "INVERSE") begin : GEN_MODE_INV
+                assign canright_mode = 1'b1;
+            end else begin : GEN_MODE_SHARED
+                assign canright_mode = mode;
+            end
+
+            sbox_canright u_logic (.in(in), .mode(canright_mode), .out(out));
         end
     endgenerate
-endmodule
 
-// ----------------------------------------------------------------
-//                          SBOX Logic GF4
-// ----------------------------------------------------------------
-module sbox_logic_gf4 (
-    input  wire [7:0] in,
-    input  wire       mode,      // 0:FORWARD, 1:INVERSE
-    output wire [7:0] out
-);
-    wire [7:0] inv_aff_out, math_in, math_out, fwd_aff_out;
-
-    // INVERSE path (Decryption): Affine-Inverse happens BEFORE Inversion
-    inv_sbox_affine u_iaff (.in(in), .out(inv_aff_out));
-
-    // MUX: If Decrypt, feed processed byte. If Encrypt, feed raw byte.
-    assign math_in = mode ? inv_aff_out : in;
-
-    // Shared 1/x logic
-    gf8_inv_gf4 u_inv_engine (.in(math_in), .out(math_out));
-
-    // FORWARD path (Encryption): Affine happens AFTER Inversion
-    sbox_affine u_faff (.in(math_out), .out(fwd_aff_out));
-
-    // Final Selection: Encrypt results in fwd_aff_out, Decrypt results in math_out
-    assign out = mode ? math_out : fwd_aff_out;
-endmodule
-
-// ----------------------------------------------------------------
-//                          SBOX Logic GF2
-// ----------------------------------------------------------------
-module sbox_logic_gf2 #(
-    parameter DIRECTION = "FORWARD"
-)(
-    input  wire [7:0] in,
-    input  wire       mode,      // 0:FORWARD, 1:INVERSE
-    output wire [7:0] out
-);
-    wire [7:0] inv_aff_out, math_in, math_out, fwd_aff_out;
-
-    inv_sbox_affine u_iaff (.in(in), .out(inv_aff_out));
-
-    assign math_in = (DIRECTION == "SHARED")  ? (mode ? inv_aff_out : in) :
-                     (DIRECTION == "INVERSE") ? inv_aff_out : in;
-
-    gf8_inv_gf2 u_math (.in(math_in), .out(math_out));
-
-    sbox_affine u_faff (.in(math_out), .out(fwd_aff_out));
-
-    if (DIRECTION == "SHARED")       assign out = mode ? math_out : fwd_aff_out;
-    else if (DIRECTION == "INVERSE") assign out = math_out;
-    else                             assign out = fwd_aff_out;
-endmodule
-
-// ----------------------------------------------------------------
-//                        SBOX Forward Affine
-// ----------------------------------------------------------------
-module sbox_affine (
-    input  wire [7:0] in,
-    output wire [7:0] out
-);
-    // Standard AES Forward Affine: out = M*in + 63
-    assign out[0] = ~(in[0] ^ in[4] ^ in[5] ^ in[6] ^ in[7]);
-    assign out[1] = ~(in[1] ^ in[5] ^ in[6] ^ in[7] ^ in[0]);
-    assign out[2] =  (in[2] ^ in[6] ^ in[7] ^ in[0] ^ in[1]);
-    assign out[3] =  (in[3] ^ in[7] ^ in[0] ^ in[1] ^ in[2]);
-    assign out[4] =  (in[4] ^ in[0] ^ in[1] ^ in[2] ^ in[3]);
-    assign out[5] = ~(in[5] ^ in[1] ^ in[2] ^ in[3] ^ in[4]);
-    assign out[6] = ~(in[6] ^ in[2] ^ in[3] ^ in[4] ^ in[5]);
-    assign out[7] =  (in[7] ^ in[3] ^ in[4] ^ in[5] ^ in[6]);
-endmodule
-
-// ----------------------------------------------------------------
-//                        SBOX Inverse Affine
-// ----------------------------------------------------------------
-module inv_sbox_affine (
-    input  wire [7:0] in,
-    output wire [7:0] out
-);
-    // Standard AES Inverse Affine: out = M_inv*(in + 63)
-    // This combines matrix multiplication and the 0x05 constant
-    wire [7:0] x = in ^ 8'h63;
-    assign out[0] = x[2] ^ x[5] ^ x[7];
-    assign out[1] = x[0] ^ x[3] ^ x[6];
-    assign out[2] = x[1] ^ x[4] ^ x[7];
-    assign out[3] = x[0] ^ x[2] ^ x[5];
-    assign out[4] = x[1] ^ x[3] ^ x[6];
-    assign out[5] = x[2] ^ x[4] ^ x[7];
-    assign out[6] = x[0] ^ x[3] ^ x[5];
-    assign out[7] = x[1] ^ x[4] ^ x[6];
 endmodule
 
 // ----------------------------------------------------------------
@@ -317,194 +231,169 @@ module inv_sbox_lut (input [7:0] in, output reg [7:0] out);
 endmodule
 
 // ----------------------------------------------------------------
-//                      GF8 Inverter (GF4 Core)
+//                          SBOX Canright
 // ----------------------------------------------------------------
-module gf8_inv_gf4 (
+module sbox_canright (
     input  wire [7:0] in,
+    input  wire       mode, // 0:FORWARD, 1:INVERSE
     output wire [7:0] out
 );
-    // 1. Isomorphism: Map GF(2^8) -> GF(2^4)^2 (Canright Basis)
-    wire [3:0] a, b;
-    assign a[3] = in[7] ^ in[5];
-    assign a[2] = in[1] ^ in[0];
-    assign a[1] = in[7] ^ in[5] ^ in[4] ^ in[3] ^ in[1];
-    assign a[0] = in[6] ^ in[4] ^ in[1];
-    assign b[3] = in[1] ^ in[0] ^ in[6];
-    assign b[2] = in[2] ^ in[1];
-    assign b[1] = in[7] ^ in[4] ^ in[1];
-    assign b[0] = in[6] ^ in[1] ^ in[0] ^ in[3] ^ in[2];
+    // Canright logic uses 1 for encrypt, 0 for decrypt. 
+    // We invert our 'mode' signal to match.
+    wire encrypt = ~mode;
 
-    // 2. Inversion Math
-    wire [3:0] a_sq, b_sq, ab, d, d_inv, q_h, q_l;
+    // --- Internal Canright Functions ---
 
-    // Square in GF(2^4)
-    assign a_sq = {a[3], a[3]^a[2], a[1], a[1]^a[0]};
-    assign b_sq = {b[3], b[3]^b[2], b[1], b[1]^b[0]};
-    
-    // Scale a_sq by Alpha (Constant for this basis)
-    wire [3:0] a_sq_alpha = {a_sq[2]^a_sq[1]^a_sq[0], a_sq[3], a_sq[2], a_sq[1]};
-    
-    gf4_mul u_m0 (.a(a), .b(b), .q(ab));
-    
-    // Inversion Core
-    assign d = a_sq_alpha ^ ab ^ b_sq;
-    gf4_inv u_i0 (.in(d), .out(d_inv));
+    function [1:0] GF_SQ_2;
+        input [1:0] A;
+        begin GF_SQ_2 = { A[0], A[1] }; end
+    endfunction
 
-    gf4_mul u_m1 (.a(d_inv), .b(a),   .q(q_h));
-    gf4_mul u_m2 (.a(d_inv), .b(a^b), .q(q_l));
+    function [1:0] GF_SCLW_2;
+        input [1:0] A;
+        begin GF_SCLW_2 = { (A[1] ^ A[0]), A[1] }; end
+    endfunction
 
-    // 3. Inverse Isomorphism: Map GF(2^4)^2 -> GF(2^8)
-    assign out[7] = q_h[3] ^ q_h[2];
-    assign out[6] = q_h[2] ^ q_l[1];
-    assign out[5] = q_h[3] ^ q_l[3];
-    assign out[4] = q_h[2] ^ q_l[3];
-    assign out[3] = q_h[2] ^ q_h[1] ^ q_h[0] ^ q_l[1];
-    assign out[2] = q_h[1] ^ q_l[2];
-    assign out[1] = q_h[0] ^ q_l[0];
-    assign out[0] = q_h[3] ^ q_h[2] ^ q_h[1] ^ q_l[1];
-endmodule
+    function [1:0] GF_SCLW2_2;
+        input [1:0] A;
+        begin GF_SCLW2_2 = { A[0], (A[1] ^ A[0]) }; end
+    endfunction
 
-// ----------------------------------------------------------------
-//                      GF8 Inverter (GF2)
-// ----------------------------------------------------------------
-module gf8_inv_gf2 (
-    input  wire [7:0] in,
-    output wire [7:0] out
-);
-    // 1. Isomorphism GF(2^8) -> GF(2^4)^2
-    wire [3:0] a = {in[7]^in[5], in[7]^in[6]^in[4]^in[3], in[6]^in[5]^in[4], in[6]^in[2]};
-    wire [3:0] b = {in[5]^in[4], in[5]^in[3], in[4]^in[1], in[0]};
+    function [1:0] GF_MULS_2;
+        input [1:0] A;
+        input ab;
+        input [1:0] B;
+        input cd;
+        reg abcd, p, q;
+        begin
+            abcd = ~(ab & cd);
+            p = (~(A[1] & B[1])) ^ abcd;
+            q = (~(A[0] & B[0])) ^ abcd;
+            GF_MULS_2 = { p, q }; 
+        end
+    endfunction
 
-    // 2. Inversion using the new GF2-based GF4 modules
-    wire [3:0] a2 = {a[3], a[3]^a[2], a[2]^a[1], a[1]^a[0]}; 
-    wire [3:0] ab, b2, combined, d_inv;
+    function [1:0] GF_MULS_SCL_2;
+        input [1:0] A;
+        input ab;
+        input [1:0] B;
+        input cd;
+        reg t, p, q;
+        begin
+            t = ~(A[0] & B[0]);
+            p = (~(ab & cd)) ^ t;
+            q = (~(A[1] & B[1])) ^ t;
+            GF_MULS_SCL_2 = { p, q };
+        end
+    endfunction
 
-    gf4_mul_gf2 m0 (.in_a(a), .in_b(b), .out(ab));
-    assign b2 = {b[3], b[3]^b[2], b[2]^b[1], b[1]^b[0]};
-    
-    // Scale a^2 by the GF(2^4) constant Phi (usually {1100} in this basis)
-    // For this specific mapping, scaling a^2 is just a bit shuffle
-    wire [3:0] a2_phi = {a2[1]^a2[0], a2[1], a2[1]^a2[2], a2[0]}; 
+    function [3:0] GF_INV_4;
+        input [3:0] A;
+        reg [1:0] a, b, d, p, q;
+        reg sa, sb, sd;
+        reg [1:0] ab, ab2, ab2N;
+        begin
+            a = A[3:2]; b = A[1:0];
+            sa = a[1] ^ a[0];
+            sb = b[1] ^ b[0];
+            ab = GF_MULS_2(a, sa, b, sb);
+            ab2 = GF_SQ_2( (a ^ b));
+            ab2N = GF_SCLW2_2( ab2);
+            d = GF_SQ_2( (ab ^ ab2N));
+            sd = d[1] ^ d[0];
+            p = GF_MULS_2(d, sd, b, sb);
+            q = GF_MULS_2(d, sd, a, sa);
+            GF_INV_4 = { p, q };
+        end
+    endfunction
 
-    assign combined = a2_phi ^ ab ^ b2;
-    gf4_inv_gf2 i0 (.in(combined), .out(d_inv));
+    function [3:0] GF_MULS_4;
+        input [3:0] A;
+        input [1:0] a;
+        input Al, Ah, aa;
+        input [3:0] B;
+        input [1:0] b;
+        input Bl, Bh, bb;
+        reg [1:0] ph, pl, p;
+        begin
+            ph = GF_MULS_2 (A[3:2], Ah, B[3:2], Bh);
+            pl = GF_MULS_2 (A[1:0], Al, B[1:0], Bl);
+            p = GF_MULS_SCL_2 ( a, aa, b, bb);
+            GF_MULS_4 = { (ph ^ p), (pl ^ p) };
+        end
+    endfunction
 
-    wire [3:0] y_h, y_l;
-    gf4_mul_gf2 m1 (.in_a(a),   .in_b(d_inv), .out(y_h));
-    gf4_mul_gf2 m2 (.in_a(a^b), .in_b(d_inv), .out(y_l));
+    function [7:0] GF_INV_8;
+        input [7:0] A;
+        reg [3:0] a, b, c, d, p, q;
+        reg [1:0] sa, sb, sd;
+        reg al, ah, aa, bl, bh, bb, dl, dh, dd;
+        reg c1, c2, c3;
+        begin
+            a = A[7:4]; b = A[3:0];
+            sa = a[3:2] ^ a[1:0]; sb = b[3:2] ^ b[1:0];
+            al = a[1] ^ a[0]; ah = a[3] ^ a[2]; aa = sa[1] ^ sa[0];
+            bl = b[1] ^ b[0]; bh = b[3] ^ b[2]; bb = sb[1] ^ sb[0];
+            c1 = ~(ah & bh); c2 = ~(sa[0] & sb[0]); c3 = ~(aa & bb);
+            c = {
+                (~(sa[0] | sb[0]) ^ (~(a[3] & b[3]))) ^ c1 ^ c3 ,
+                (~(sa[1] | sb[1]) ^ (~(a[2] & b[2]))) ^ c1 ^ c2 ,
+                (~(al | bl) ^ (~(a[1] & b[1]))) ^ c2 ^ c3 ,
+                (~(a[0] | b[0]) ^ (~(al & bl))) ^ (~(sa[1] & sb[1])) ^ c2
+            };
+            d = GF_INV_4(c);
+            sd = d[3:2] ^ d[1:0]; dl = d[1] ^ d[0]; dh = d[3] ^ d[2]; dd = sd[1] ^ sd[0];
+            p = GF_MULS_4(d, sd, dl, dh, dd, b, sb, bl, bh, bb);
+            q = GF_MULS_4(d, sd, dl, dh, dd, a, sa, al, ah, aa);
+            GF_INV_8 = { p, q };
+        end
+    endfunction
 
-    // 3. Inverse Isomorphism (Same as before)
-    assign out[7] = y_h[3]^y_h[2];
-    assign out[6] = y_h[3];
-    assign out[5] = y_h[3]^y_h[2]^y_l[3];
-    assign out[4] = y_h[2]^y_l[3];
-    assign out[3] = y_h[2]^y_l[2]^y_l[1];
-    assign out[2] = y_h[3]^y_h[2]^y_l[3]^y_l[2];
-    assign out[1] = y_h[3]^y_l[1];
-    assign out[0] = y_h[2]^y_l[0];
-endmodule
+    function [7:0] SELECT_NOT_8;
+        input [7:0] A, B;
+        input s;
+        begin SELECT_NOT_8 = ~( s ? A : B ); end
+    endfunction
 
-// ----------------------------------------------------------------
-//                          GF4 Multiplier
-// ----------------------------------------------------------------
-module gf4_mul (input [3:0] a, input [3:0] b, output [3:0] q);
-    // Multiplies in GF(2^4) / GF(2^2)
-    wire aH = a[3], aL = a[2], bH = b[3], bL = b[2];
-    wire cH = a[1], cL = a[0], dH = b[1], dL = b[0];
-    
-    // Low level bit math to ensure basis consistency
-    assign q[3] = aH&bH ^ aL&bH ^ aH&bL ^ aH&dH ^ aL&dH ^ aH&dL ^ cH&dH ^ cL&dH ^ cH&dL;
-    assign q[2] = aL&bL ^ aL&dH ^ aH&dL ^ aL&dL ^ cL&dL ^ cH&dL ^ cL&dH;
-    assign q[1] = aH&bH ^ aH&dH ^ aL&dH ^ aH&dL ^ cH&dH ^ cL&dH ^ cH&dL ^ cL&dL;
-    assign q[0] = aL&bL ^ aL&dL ^ cL&dL;
-endmodule
+    // --- Structural Fused Logic ---
 
-// ----------------------------------------------------------------
-//                          GF4 Inverter
-// ----------------------------------------------------------------
-module gf4_inv (input [3:0] in, output [3:0] out);
-    // 4-bit Inverter optimized for the Canright Basis
-    assign out[3] = in[3] ^ in[3]&in[2]&in[1] ^ in[3]&in[0] ^ in[2];
-    assign out[2] = in[3]&in[2]&in[1] ^ in[3]&in[2]&in[0] ^ in[3]&in[0] ^ in[2] ^ in[2]&in[1];
-    assign out[1] = in[3] ^ in[3]&in[2]&in[1] ^ in[3]&in[1]&in[0] ^ in[2] ^ in[2]&in[0] ^ in[1];
-    assign out[0] = in[3]&in[2]&in[1] ^ in[3]&in[2]&in[0] ^ in[3]&in[1] ^ in[3]&in[1]&in[0] ^ in[3]&in[0] ^ in[2] ^ in[2]&in[1] ^ in[2]&in[1]&in[0] ^ in[1] ^ in[0];
-endmodule
+    wire [7:0] B, C, D, X, Y, Z;
+    wire R1, R2, R3, R4, R5, R6, R7, R8, R9;
+    wire T1, T2, T3, T4, T5, T6, T7, T8, T9, T10;
 
-// ----------------------------------------------------------------
-//                      GF4 Multiplier (GF2)
-// ----------------------------------------------------------------
-module gf4_mul_gf2 (
-    input  wire [3:0] in_a,
-    input  wire [3:0] in_b,
-    output wire [3:0] out
-);
-    wire [1:0] a_h = in_a[3:2], a_l = in_a[1:0];
-    wire [1:0] b_h = in_b[3:2], b_l = in_b[1:0];
-    wire [1:0] m_h, m_l, m_mid, scaled_h;
+    assign R1 = in[7] ^ in[5];
+    assign R2 = in[7] ~^ in[4];
+    assign R3 = in[6] ^ in[0];
+    assign R4 = in[5] ~^ R3;
+    assign R5 = in[4] ^ R4;
+    assign R6 = in[3] ^ in[0];
+    assign R7 = in[2] ^ R1;
+    assign R8 = in[1] ^ R3;
+    assign R9 = in[3] ^ R8;
 
-    gf2_mul u0 (.in_a(a_h),       .in_b(b_h),       .out(m_h));
-    gf2_mul u1 (.in_a(a_l),       .in_b(b_l),       .out(m_l));
-    gf2_mul u2 (.in_a(a_h ^ a_l), .in_b(b_h ^ b_l), .out(m_mid));
-    
-    gf2_scale_omega s0 (.in(m_h), .out(scaled_h));
+    assign B[7] = R7 ~^ R8; assign B[6] = R5; assign B[5] = in[1] ^ R4;
+    assign B[4] = R1 ~^ R3; assign B[3] = in[1] ^ R2 ^ R6; assign B[2] = ~in[0];
+    assign B[1] = R4;      assign B[0] = in[2] ~^ R9;
 
-    assign out = { (m_mid ^ m_l), (scaled_h ^ m_l) };
-endmodule
+    assign Y[7] = R2;       assign Y[6] = in[4] ^ R8; assign Y[5] = in[6] ^ in[4];
+    assign Y[4] = R9;       assign Y[3] = in[6] ~^ R2; assign Y[2] = R7;
+    assign Y[1] = in[4] ^ R6; assign Y[0] = in[1] ^ R5;
 
-// ----------------------------------------------------------------
-//                      GF4 Inverter (GF2)
-// ----------------------------------------------------------------
-module gf4_inv_gf2 (
-    input  wire [3:0] in,
-    output wire [3:0] out
-);
-    wire [1:0] a_h = in[3:2], a_l = in[1:0];
-    wire [1:0] a_h_sq = {a_h[1], a_h[1] ^ a_h[0]};
-    wire [1:0] a_l_sq = {a_l[1], a_l[1] ^ a_l[0]};
-    wire [1:0] a_hl, combined, d_inv;
+    assign Z = SELECT_NOT_8(B, Y, encrypt);
+    assign C = GF_INV_8(Z);
 
-    gf2_mul m0 (.in_a(a_h), .in_b(a_l), .out(a_hl));
-    gf2_scale_omega s0 (.in(a_h_sq), .out(combined));
-    
-    gf2_inv i0 (.in(combined ^ a_hl ^ a_l_sq), .out(d_inv));
+    assign T1 = C[7] ^ C[3]; assign T2 = C[6] ^ C[4]; assign T3 = C[6] ^ C[0];
+    assign T4 = C[5] ~^ C[3]; assign T5 = C[5] ~^ T1; assign T6 = C[5] ~^ C[1];
+    assign T7 = C[4] ~^ T6;   assign T8 = C[2] ^ T4;  assign T9 = C[1] ^ T2;
+    assign T10 = T3 ^ T5;
 
-    gf2_mul m1 (.in_a(a_h),       .in_b(d_inv), .out(out[3:2]));
-    gf2_mul m2 (.in_a(a_h ^ a_l), .in_b(d_inv), .out(out[1:0]));
-endmodule
+    assign D[7] = T4; assign D[6] = T1; assign D[5] = T3; assign D[4] = T5;
+    assign D[3] = T2 ^ T5; assign D[2] = T3 ^ T8; assign D[1] = T7; assign D[0] = T9;
 
-// ----------------------------------------------------------------
-//                          GF2 Multiplier
-// ----------------------------------------------------------------
-module gf2_mul (
-    input  wire [1:0] in_a,
-    input  wire [1:0] in_b,
-    output wire [1:0] out
-);
-    wire a0 = in_a[0], a1 = in_a[1];
-    wire b0 = in_b[0], b1 = in_b[1];
-    
-    assign out[0] = (a0 & b0) ^ (a1 & b1);
-    assign out[1] = (a1 & b0) ^ (a0 & b1) ^ (a1 & b1);
-endmodule
+    assign X[7] = C[4] ~^ C[1]; assign X[6] = C[1] ^ T10; assign X[5] = C[2] ^ T10;
+    assign X[4] = C[6] ~^ C[1]; assign X[3] = T8 ^ T9;   assign X[2] = C[7] ~^ T7;
+    assign X[1] = T6;          assign X[0] = ~C[2];
 
-// ----------------------------------------------------------------
-//                          GF2 Inverter
-// ----------------------------------------------------------------
-module gf2_inv (
-    input  wire [1:0] in,
-    output wire [1:0] out
-);
-    assign out[0] = in[1] ^ in[0];
-    assign out[1] = in[1];
-endmodule
+    assign out = SELECT_NOT_8(D, X, encrypt);
 
-// ----------------------------------------------------------------
-//                          GF2 Scale Omega
-// ----------------------------------------------------------------
-module gf2_scale_omega (
-    input  wire [1:0] in,
-    output wire [1:0] out
-);
-    assign out[0] = in[1] ^ in[0];
-    assign out[1] = in[0];
 endmodule
