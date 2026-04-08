@@ -27,10 +27,11 @@ def parse_files(file_list):
         "VARTXT": "VarTxt",
         "VARKEY": "VarKey",
         "GFSBOX": "GFSbox",
-        "KEYSBOX": "KeySbox"
+        "KEYSBOX": "KeySbox",
+        "MCT": "MCT"
     }
 
-    # Print C++ Header and Struct Definition with updated member names
+    # Print C++ Header and Struct Definition
     print("#ifndef AES_VECTORS_H")
     print("#define AES_VECTORS_H")
     print("#include <stdint.h>")
@@ -52,31 +53,57 @@ def parse_files(file_list):
 
         filename = os.path.basename(file_path)
         mode = "AES"
-        test_type = ""
+        test_type = "KAT"
         key_len = ""
         direction = "Enc"
         file_vectors = 0
 
-        # Pass 1: Scan for Metadata
+        # --- Pass 1: Scan for Metadata (STRICTLY in comments) ---
+        mode_found = False
+        type_found = False
+        len_found = False
+
         with open(file_path, 'r') as f:
-            for i, line in enumerate(f):
-                u_line = line.upper()
-                m_match = re.search(r"(ECB|CBC|CFB128|OFB|GCM|CTR)", u_line)
-                if m_match: mode = m_match.group(1)
+            for line in f:
+                stripped = line.strip()
+                if not stripped: continue
                 
-                t_match = re.search(r"(VARTXT|VARKEY|GFSBOX|KEYSBOX)", u_line)
-                if t_match: 
-                    test_type = TYPE_MAP.get(t_match.group(1), t_match.group(1))
+                # If we hit a line that isn't a comment, stop scanning metadata.
+                # This prevents matching hex keys (which follow metadata) as modes.
+                if not stripped.startswith('#'):
+                    if '[' in stripped or '=' in stripped:
+                        break
+                    continue
 
-                k_match = re.search(r"(?:KEY LENGTH|L\s*[:=])\s*(\d+)", u_line)
-                if k_match: key_len = k_match.group(1)
-                if i > 200: break
+                u_line = stripped.upper()
+                
+                # Detect Mode (First whole-word match wins)
+                if not mode_found:
+                    m_match = re.search(r"\b(ECB|CBC|CFB128|OFB|GCM|CTR)\b", u_line)
+                    if m_match: 
+                        mode = m_match.group(1)
+                        mode_found = True
+                
+                # Detect Test Type
+                if not type_found:
+                    t_match = re.search(r"\b(VARTXT|VARKEY|GFSBOX|KEYSBOX|MCT)\b", u_line)
+                    if t_match: 
+                        test_type = TYPE_MAP.get(t_match.group(1), t_match.group(1))
+                        type_found = True
 
+                # Detect Key Length
+                if not len_found:
+                    k_match = re.search(r"(?:KEY LENGTH|L\s*[:=])\s*(\d+)", u_line)
+                    if k_match: 
+                        key_len = k_match.group(1)
+                        len_found = True
+
+        # Filename fallback if key length not found in headers
         if not key_len:
             fn_match = re.search(r"(128|192|256)", filename)
             if fn_match: key_len = fn_match.group(1)
 
-        # Pass 2: Extract Data
+        # --- Pass 2: Extract Data ---
         with open(file_path, 'r') as f:
             current_vec = {}
             for line in f:
@@ -87,6 +114,7 @@ def parse_files(file_list):
                 if "[ENCRYPT]" in u_line: direction = "Enc"
                 elif "[DECRYPT]" in u_line: direction = "Dec"
                 
+                # Section headers like [L=192] can change key length mid-file
                 klen_sect = re.search(r"\[L\s*=\s*(\d+)\]", u_line)
                 if klen_sect: key_len = klen_sect.group(1)
 
@@ -97,6 +125,7 @@ def parse_files(file_list):
                     current_vec[key] = val
                     
                     if all(k in current_vec for k in ["KEY", "PLAINTEXT", "CIPHERTEXT"]):
+                        # Final bit-length check based on actual key data
                         this_key_len = key_len
                         if not this_key_len:
                             this_key_len = str(len(current_vec['KEY']) * 4)
@@ -116,11 +145,10 @@ def parse_files(file_list):
                         del current_vec["CIPHERTEXT"]
 
     print("};")
-    # Updated to NUM_VECTORS
     print(f"\nstatic const int NUM_VECTORS = {total_vectors};")
     print("")
     print("#endif // AES_VECTORS_H")
-    print(f"DEBUG: Processed all files. Total vectors: {total_vectors}", file=sys.stderr)
+    print(f"DEBUG: Total vectors found: {total_vectors}", file=sys.stderr)
 
 if __name__ == "__main__":
     files = sys.argv[1:]

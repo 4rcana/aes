@@ -9,6 +9,8 @@ module shift_rows_generic #(
     output wire [127:0] out
 );
 
+    wire _unused = &{1'b0, mode, 1'b0};
+
     // State is column-major: bytes [127:120] = row0col0, [119:112] = row1col0 ...
     
     wire [127:0] fwd_wire;

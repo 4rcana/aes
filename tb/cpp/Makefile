@@ -8,7 +8,7 @@ MODE       ?= ECB
 # --- File Paths ---
 TOP_MODULE   = aes_top
 V_DIR        = ../../rtl
-VECTOR_DIR   = ./KAT_AES
+VECTOR_DIR   = ./AESMCT
 PARSE_SCRIPT = ./parser.py
 VECTORS_H    = vectors.h
 
@@ -24,7 +24,7 @@ V_SRCS      = $(V_DIR)/sbox.v \
               $(V_DIR)/aes_key_schedule_iterative.v \
               $(V_DIR)/aes_core_iterative.v \
               $(V_DIR)/$(TOP_MODULE).v
-CPP_SRCS    = tb_aes_top_iterative.cpp
+CPP_SRCS    = tb_aes_top_iterative_MCT.cpp
 
 # --- Verilator Flags ---
 VFLAGS      = --cc --exe --build -j 0 --trace
