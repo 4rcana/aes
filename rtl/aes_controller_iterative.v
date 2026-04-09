@@ -1,7 +1,7 @@
 // ----------------------------------------------------------------
 //              AES Iterative Controller (Generic)
 // ----------------------------------------------------------------
-module aes_iterative_controller #(
+module aes_controller_iterative #(
     parameter [63:0] DIRECTION = "FORWARD",
     parameter        KEY_BITS  = 128
 )(

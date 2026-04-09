@@ -27,6 +27,8 @@ module aes_core_iterative #(
     output reg                 dec_done
 );
 
+// WHAT WAS I THINKING, WHY IS THERE NO MODE PORT????
+
     localparam [3:0] Nk = 4'(KEY_BITS / 32);
     localparam [3:0] Nr = Nk + 4'd6;
 
@@ -78,7 +80,7 @@ module aes_core_iterative #(
                 .out(enc_round_out)
             );
 
-            aes_iterative_controller #(
+            aes_controller_iterative #(
                 .DIRECTION ("FORWARD"),
                 .KEY_BITS  (KEY_BITS) 
             ) ctrl_enc (
@@ -119,7 +121,7 @@ module aes_core_iterative #(
                 .out(dec_round_out)
             );
 
-            aes_iterative_controller #(
+            aes_controller_iterative #(
                 .DIRECTION ("INVERSE"),
                 .KEY_BITS  (KEY_BITS)
             ) ctrl_dec (
@@ -184,7 +186,7 @@ module aes_core_iterative #(
                 .round_num_b(4'd0), .key_out_b()
             );
 
-            aes_iterative_controller #(
+            aes_controller_iterative #(
                 .DIRECTION ("SHARED"),
                 .KEY_BITS  (KEY_BITS)
             ) ctrl_shared (

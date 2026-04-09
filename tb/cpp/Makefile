@@ -43,8 +43,15 @@ VFLAGS     += --trace-max-array 1024
 VFLAGS     += -GKEY_BITS=$(KEY_BITS) 
 VFLAGS     += -GSBOX_IMPL=\"$(SBOX_IMPL)\" 
 VFLAGS     += -GDUPLEX=\"$(DUPLEX)\"
+VFLAGS     += -GMODE=\"$(MODE)\"
 # Pass parameters to C++
-VFLAGS     += -CFLAGS "-DKEY_BITS=$(KEY_BITS) -DSBOX_IMPL=\"$(SBOX_IMPL)\" -DDUPLEX=\"$(DUPLEX)\" -DTEST_$(TEST)"
+CPP_DEFINES += -DKEY_BITS=$(KEY_BITS)
+CPP_DEFINES += -DSBOX_IMPL=\"$(SBOX_IMPL)\"
+CPP_DEFINES += -DDUPLEX=\"$(DUPLEX)\"
+CPP_DEFINES += -DMODE=\"$(MODE)\"
+CPP_DEFINES += -DTEST_$(TEST)
+
+VFLAGS 		+= -CFLAGS "$(CPP_DEFINES)"
 
 # The generated executable
 TARGET     = obj_dir/V$(TOP_MODULE)
@@ -83,7 +90,7 @@ help:
 	@echo "  KEY_BITS   : 128, 192, 256  (Current: $(KEY_BITS))"
 	@echo "  SBOX_IMPL  : LUT, CANRIGHT  (Current: $(SBOX_IMPL))"
 	@echo "  DUPLEX     : HALF, FULL     (Current: $(DUPLEX))"
-	@echo "  MODE       : ECB            (Current: $(MODE))"
+	@echo "  MODE       : ECB, CBC       (Current: $(MODE))"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make TEST=MCT KEY_BITS=256"
