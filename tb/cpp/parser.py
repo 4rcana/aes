@@ -1,20 +1,26 @@
-# Parser usage example:
-# python parse.py KAT_AES/ECB*128.rsp > vectors.h
-
 import sys
 import os
 import re
 
-def hex_to_chunks(hex_str):
-    """Splits hex string into 32-bit words with proper formatting."""
+def hex_to_chunks(hex_str, limit):
+    """
+    Splits hex string into 32-bit words.
+    Pads with 0x00000000u up to the 'limit' (4 for data, 8 for keys).
+    """
     # Remove any non-hex characters
     hex_str = "".join(c for c in hex_str if c in "0123456789abcdefABCDEF")
     
     # Generate 32-bit chunks
     chunks = [f"0x{hex_str[i:i+8]}u" for i in range(0, len(hex_str), 8)]
     
-    # Format with newlines if the key is long (AES-192 or 256)
-    if len(chunks) > 4:
+    # Pad or truncate to the specified limit
+    if len(chunks) < limit:
+        chunks += ["0x00000000u"] * (limit - len(chunks))
+    else:
+        chunks = chunks[:limit]
+    
+    # Formatting: Put a newline after 4 words for readability if it's a long array (key[8])
+    if limit > 4:
         first_half = ", ".join(chunks[:4])
         second_half = ", ".join(chunks[4:])
         return "{" + first_half + ",\n        " + second_half + "}"
@@ -22,13 +28,10 @@ def hex_to_chunks(hex_str):
     return "{" + ", ".join(chunks) + "}"
 
 def parse_files(file_list):
-    # Mapping for exact requested casing
     TYPE_MAP = {
-        "VARTXT": "VarTxt",
-        "VARKEY": "VarKey",
-        "GFSBOX": "GFSbox",
-        "KEYSBOX": "KeySbox",
-        "MCT": "MCT"
+        "VARTXT": "VarTxt", "VARKEY": "VarKey", 
+        "GFSBOX": "GFSbox", "KEYSBOX": "KeySbox", 
+        "MCT": "MCT", "MMT": "MMT"
     }
 
     # Print C++ Header and Struct Definition
@@ -37,9 +40,9 @@ def parse_files(file_list):
     print("#include <stdint.h>")
     print("")
     print("struct TestVector {")
-    print("    uint32_t key[8]; // Supports up to AES-256")
-    print("    uint32_t pt[4];  // Plaintext")
-    print("    uint32_t ct[4];  // Ciphertext")
+    print("    uint32_t key[8]; // Max size for AES-256")
+    print("    uint32_t pt[4];  // Always 128-bit")
+    print("    uint32_t ct[4];  // Always 128-bit")
     print("    const char* name;")
     print("};")
     print("")
@@ -52,56 +55,22 @@ def parse_files(file_list):
             continue
 
         filename = os.path.basename(file_path)
-        mode = "AES"
-        test_type = "KAT"
-        key_len = ""
-        direction = "Enc"
-        file_vectors = 0
+        mode, test_type, key_len, direction = "AES", "KAT", "", "Enc"
 
-        # --- Pass 1: Scan for Metadata (STRICTLY in comments) ---
-        mode_found = False
-        type_found = False
-        len_found = False
-
+        # --- Pass 1: Metadata strictly from comments ---
         with open(file_path, 'r') as f:
-            for line in f:
-                stripped = line.strip()
-                if not stripped: continue
-                
-                # If we hit a line that isn't a comment, stop scanning metadata.
-                # This prevents matching hex keys (which follow metadata) as modes.
-                if not stripped.startswith('#'):
-                    if '[' in stripped or '=' in stripped:
-                        break
+            for i, line in enumerate(f):
+                line = line.strip()
+                if not line.startswith('#'):
+                    if line and ('[' in line or '=' in line): break
                     continue
-
-                u_line = stripped.upper()
-                
-                # Detect Mode (First whole-word match wins)
-                if not mode_found:
-                    m_match = re.search(r"\b(ECB|CBC|CFB128|OFB|GCM|CTR)\b", u_line)
-                    if m_match: 
-                        mode = m_match.group(1)
-                        mode_found = True
-                
-                # Detect Test Type
-                if not type_found:
-                    t_match = re.search(r"\b(VARTXT|VARKEY|GFSBOX|KEYSBOX|MCT)\b", u_line)
-                    if t_match: 
-                        test_type = TYPE_MAP.get(t_match.group(1), t_match.group(1))
-                        type_found = True
-
-                # Detect Key Length
-                if not len_found:
-                    k_match = re.search(r"(?:KEY LENGTH|L\s*[:=])\s*(\d+)", u_line)
-                    if k_match: 
-                        key_len = k_match.group(1)
-                        len_found = True
-
-        # Filename fallback if key length not found in headers
-        if not key_len:
-            fn_match = re.search(r"(128|192|256)", filename)
-            if fn_match: key_len = fn_match.group(1)
+                u = line.upper()
+                m = re.search(r"\b(ECB|CBC|OFB|CFB128|CTR)\b", u)
+                if m: mode = m.group(1)
+                t = re.search(r"\b(VARTXT|VARKEY|GFSBOX|KEYSBOX|MCT|MMT)\b", u)
+                if t: test_type = TYPE_MAP.get(t.group(1), t.group(1))
+                k = re.search(r"(?:L\s*=\s*|LENGTH\s*)(\d+)", u)
+                if k: key_len = k.group(1)
 
         # --- Pass 2: Extract Data ---
         with open(file_path, 'r') as f:
@@ -114,10 +83,6 @@ def parse_files(file_list):
                 if "[ENCRYPT]" in u_line: direction = "Enc"
                 elif "[DECRYPT]" in u_line: direction = "Dec"
                 
-                # Section headers like [L=192] can change key length mid-file
-                klen_sect = re.search(r"\[L\s*=\s*(\d+)\]", u_line)
-                if klen_sect: key_len = klen_sect.group(1)
-
                 if '=' in line:
                     parts = line.split('=', 1)
                     key = parts[0].strip().upper()
@@ -125,34 +90,33 @@ def parse_files(file_list):
                     current_vec[key] = val
                     
                     if all(k in current_vec for k in ["KEY", "PLAINTEXT", "CIPHERTEXT"]):
-                        # Final bit-length check based on actual key data
-                        this_key_len = key_len
-                        if not this_key_len:
-                            this_key_len = str(len(current_vec['KEY']) * 4)
-
-                        count = current_vec.get("COUNT", file_vectors)
-                        label = f"{mode}{test_type}{this_key_len}"
+                        k_v, p_v, c_v = current_vec["KEY"], current_vec["PLAINTEXT"], current_vec["CIPHERTEXT"]
                         
-                        print(f"    // From {filename}")
-                        print(f"    {{ {hex_to_chunks(current_vec['KEY'])},")
-                        print(f"      {hex_to_chunks(current_vec['PLAINTEXT'])},")
-                        print(f"      {hex_to_chunks(current_vec['CIPHERTEXT'])},")
-                        print(f"      \"{label} {direction} COUNT={count}\" }},")
+                        # MMT logic: split into 128-bit blocks. MCT/KAT: 1 block.
+                        num_blocks = 1 if test_type == "MCT" else (len(p_v) // 32)
                         
-                        file_vectors += 1
-                        total_vectors += 1
-                        del current_vec["PLAINTEXT"]
-                        del current_vec["CIPHERTEXT"]
+                        for b in range(num_blocks):
+                            sub_p = p_v[b*32:(b+1)*32]
+                            sub_c = c_v[b*32:(b+1)*32]
+                            label = f"[{test_type}] {mode}{key_len} {direction} C{current_vec.get('COUNT','0')} B{b}"
+                            
+                            print(f"    {{ {hex_to_chunks(k_v, 8)},") # Key limited to 8
+                            print(f"      {hex_to_chunks(sub_p, 4)},") # PT limited to 4
+                            print(f"      {hex_to_chunks(sub_c, 4)},") # CT limited to 4
+                            print(f"      \"{label}\" }},")
+                            total_vectors += 1
+                        
+                        # Keep key/count for files that reuse them
+                        current_vec = {"KEY": k_v, "COUNT": current_vec.get("COUNT", "0")}
 
     print("};")
     print(f"\nstatic const int NUM_VECTORS = {total_vectors};")
     print("")
     print("#endif // AES_VECTORS_H")
-    print(f"DEBUG: Total vectors found: {total_vectors}", file=sys.stderr)
+    print(f"DEBUG: Processed {total_vectors} vectors.", file=sys.stderr)
 
 if __name__ == "__main__":
-    files = sys.argv[1:]
-    if not files:
-        print("Usage: python3 parse_aes.py *.rsp > vectors.h")
+    if len(sys.argv) < 2:
+        print("Usage: python3 parser.py *.rsp > vectors.h")
     else:
-        parse_files(files)
+        parse_files(sys.argv[1:])

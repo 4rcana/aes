@@ -22,7 +22,7 @@ module aes_top #(
     // Decryption Lane
     input  wire                dec_start,
     input  wire [127:0]        i_ciphertext,
-    output wire [127:0]        o_plain_text,
+    output wire [127:0]        o_plaintext,
     output wire                dec_done
 );
 
@@ -38,7 +38,7 @@ module aes_top #(
                 .enc_start(enc_start), .i_plaintext(i_plaintext), 
                 .o_ciphertext(o_ciphertext), .enc_done(enc_done),
                 .dec_start(dec_start), .i_ciphertext(i_ciphertext), 
-                .o_plain_text(o_plain_text), .dec_done(dec_done)
+                .o_plaintext(o_plaintext), .dec_done(dec_done)
             );
         end
         else begin : ARCH_PIPELINED

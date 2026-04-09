@@ -23,7 +23,7 @@ module aes_core_iterative #(
     // Decryption Lane
     input  wire                dec_start,
     input  wire [127:0]        i_ciphertext,
-    output reg  [127:0]        o_plain_text,
+    output reg  [127:0]        o_plaintext,
     output reg                 dec_done
 );
 
@@ -32,12 +32,18 @@ module aes_core_iterative #(
 
     generate
         if (DUPLEX == "FULL") begin : ARCH_FULL
-            reg  [3:0]   enc_round_num, dec_round_num;
+            // Internal Registers
             reg  [127:0] enc_state, dec_state;
-            reg          enc_running, dec_running;
             
-            wire [127:0] enc_round_key, dec_round_key;
-            wire [127:0] enc_round_out, dec_round_out;
+            // Control Wires
+            wire [3:0]   enc_round_num,     dec_round_num;
+            wire         enc_init,          dec_init;
+            wire         enc_busy,          dec_busy;
+            wire         enc_done_pulse,    dec_done_pulse;
+
+            // Datapath Wires
+            wire [127:0] enc_round_key,     dec_round_key;
+            wire [127:0] enc_round_out,     dec_round_out;
 
             // Unified Scheduler in FULL mode
             aes_key_scheduler #(
@@ -72,6 +78,34 @@ module aes_core_iterative #(
                 .out(enc_round_out)
             );
 
+            aes_iterative_controller #(
+                .DIRECTION ("FORWARD"),
+                .KEY_BITS  (KEY_BITS) 
+            ) ctrl_enc (
+                .clk(clk),
+                .rst_n(rst_n),
+                .start(enc_start),
+                .key_ready(key_ready),
+                .round_num(enc_round_num),
+                .init_cycle(enc_init),
+                .busy(enc_busy),
+                .done(enc_done_pulse)
+            );
+
+            always @(posedge clk or negedge rst_n) begin
+                if (!rst_n) begin
+                    enc_state    <= 128'b0;
+                    o_ciphertext <= 128'b0;
+                    enc_done     <= 1'b0;
+                end else begin
+                    if (enc_init)       enc_state <= i_plaintext ^ enc_round_key;
+                    else if (enc_busy)  enc_state <= enc_round_out;
+                    
+                    if (enc_done_pulse) o_ciphertext <= enc_round_out;
+                    enc_done <= enc_done_pulse; // Transmit pulse to port
+                end
+            end
+
             // Inverse Round
             aes_round_generic #(
                 .DIRECTION("INVERSE"),
@@ -85,64 +119,52 @@ module aes_core_iterative #(
                 .out(dec_round_out)
             );
 
-            // Encryption FSM
-            always @(posedge clk or negedge rst_n) begin
-                if (!rst_n) begin
-                    enc_round_num <= 4'd0;
-                    enc_running   <= 1'b0;
-                    enc_done      <= 1'b0;
-                    o_ciphertext  <= 128'h0;
-                end else if (enc_start && key_ready && !enc_running) begin
-                    enc_state     <= i_plaintext ^ enc_round_key;
-                    enc_round_num <= 4'd1;
-                    enc_running   <= 1'b1;
-                    enc_done      <= 1'b0;
-                end else if (enc_running) begin
-                    enc_state <= enc_round_out;
-                    if (enc_round_num == Nr) begin
-                        o_ciphertext  <= enc_round_out;
-                        enc_done      <= 1'b1;
-                        enc_running   <= 1'b0;
-                        enc_round_num <= 4'd0;
-                    end else enc_round_num <= enc_round_num + 4'd1;
-                end else enc_done <= 1'b0;
-            end
+            aes_iterative_controller #(
+                .DIRECTION ("INVERSE"),
+                .KEY_BITS  (KEY_BITS)
+            ) ctrl_dec (
+                .clk(clk),
+                .rst_n(rst_n),
+                .start(dec_start),
+                .key_ready(key_ready),
+                .round_num(dec_round_num),
+                .init_cycle(dec_init),
+                .busy(dec_busy),
+                .done(dec_done_pulse)
+            );
 
-            // Decryption FSM
             always @(posedge clk or negedge rst_n) begin
                 if (!rst_n) begin
-                    dec_round_num <= 4'd0;
-                    dec_running   <= 1'b0;
-                    dec_done      <= 1'b0;
-                    o_plain_text  <= 128'h0;
-                end else if (dec_start && key_ready && !dec_running) begin
-                    dec_state     <= i_ciphertext ^ dec_round_key;
-                    dec_round_num <= 4'd1;
-                    dec_running   <= 1'b1;
-                    dec_done      <= 1'b0;
-                end else if (dec_running) begin
-                    dec_state <= dec_round_out;
-                    if (dec_round_num == Nr) begin
-                        o_plain_text  <= dec_round_out;
-                        dec_done      <= 1'b1;
-                        dec_running   <= 1'b0;
-                        dec_round_num <= 4'd0;
-                    end else dec_round_num <= dec_round_num + 4'd1;
-                end else dec_done <= 1'b0;
+                    dec_state    <= 128'b0;
+                    o_plaintext  <= 128'b0;
+                    dec_done     <= 1'b0;
+                end else begin
+                    if (dec_init)       dec_state <= i_ciphertext ^ dec_round_key;
+                    else if (dec_busy)  dec_state <= dec_round_out;
+                    
+                    if (dec_done_pulse) o_plaintext <= dec_round_out;
+                    dec_done <= dec_done_pulse; // Transmit pulse to port
+                end
             end
-        end
+    end
 
         else begin : ARCH_HALF
-            reg [3:0]   round_num;
-            reg [127:0] state;
-            reg         busy;
-            reg         mode_reg; 
-            
-            // Key Scheduler and FSM needs to know mode without delay
-            wire current_op_mode = busy ? mode_reg : dec_start;
+            // Internal Registers
+            reg [127:0]  shared_state;
+            reg          mode_reg; 
 
-            wire [127:0] round_key;
-            wire [127:0] round_out;
+            // Control Wires
+            wire [3:0]   shared_round_num;
+            wire         shared_init;
+            wire         shared_busy;
+            wire         shared_done_pulse;
+
+            // Datapath Wires
+            wire [127:0] shared_round_key;
+            wire [127:0] shared_round_out;
+            
+            // Key Scheduler needs to know mode without delay
+            wire current_op_mode = shared_busy ? mode_reg : dec_start;
 
             // Key Scheduler
             aes_key_scheduler #(
@@ -150,12 +172,30 @@ module aes_core_iterative #(
                 .SBOX_IMPL(SBOX_IMPL),
                 .DUPLEX(DUPLEX)
             ) u_ksi (
-                .clk(clk), .rst_n(rst_n),
-                .key_load(key_load), .key_in(key_in), .key_ready(key_ready),
-                .round_num_a(round_num), .mode_a(current_op_mode),
-                .key_out_a(round_key),
+                .clk(clk),
+                .rst_n(rst_n),
+                .key_load(key_load),
+                .key_in(key_in),
+                .key_ready(key_ready),
+                .round_num_a(shared_round_num),
+                .mode_a(current_op_mode),
+                .key_out_a(shared_round_key),
                 // Unused
                 .round_num_b(4'd0), .key_out_b()
+            );
+
+            aes_iterative_controller #(
+                .DIRECTION ("SHARED"),
+                .KEY_BITS  (KEY_BITS)
+            ) ctrl_shared (
+                .clk(clk),
+                .rst_n(rst_n),
+                .start(enc_start || dec_start),
+                .key_ready(key_ready),
+                .round_num(shared_round_num),
+                .init_cycle(shared_init),
+                .busy(shared_busy),
+                .done(shared_done_pulse)
             );
 
             // Round Logic (Round logic happens in cycles AFTER start, so mode_reg is fine)
@@ -164,50 +204,48 @@ module aes_core_iterative #(
                 .KEY_BITS(KEY_BITS), 
                 .SBOX_IMPL(SBOX_IMPL)
             ) u_shared_rnd (
-                .round_num(round_num), 
-                .in(state),
-                .round_key(round_key), 
+                .round_num(shared_round_num), 
+                .in(shared_state),
+                .round_key(shared_round_key), 
                 .mode(mode_reg),
-                .out(round_out)
+                .out(shared_round_out)
             );
 
             always @(posedge clk or negedge rst_n) begin
                 if (!rst_n) begin
-                    round_num    <= 0;
-                    busy         <= 0;
-                    mode_reg     <= 0;
-                    enc_done     <= 0;
-                    dec_done     <= 0;
-                    o_ciphertext <= 0;
-                    o_plain_text <= 0;
-                end 
-                else if ((enc_start || dec_start) && key_ready && !busy) begin
-                    busy      <= 1'b1;
-                    mode_reg  <= dec_start; 
-                    state     <= (current_op_mode ? i_ciphertext : i_plaintext) ^ round_key;
-                    round_num <= 4'd1;
-                    enc_done  <= 1'b0; 
-                    dec_done  <= 1'b0;
-                end 
-                else if (busy) begin
-                    state <= round_out;
-                    if (round_num == Nr) begin
-                        if (mode_reg) begin
-                            o_plain_text <= round_out;
-                            dec_done     <= 1'b1;
-                        end
-                        else begin
-                            o_ciphertext <= round_out;
-                            enc_done <= 1'b1;
-                        end
-                        busy      <= 0; 
-                        round_num <= 0;
-                    end else begin
-                        round_num <= round_num + 4'd1;
-                    end
+                    shared_state <= 128'h0;
+                    mode_reg     <= 1'b0;
+                    o_ciphertext <= 128'h0;
+                    o_plaintext  <= 128'h0;
+                    enc_done     <= 1'b0;
+                    dec_done     <= 1'b0;
                 end else begin
-                    enc_done <= 1'b0;
-                    dec_done <= 1'b0;
+                    // Initial Cycle (Round 0)
+                    if (shared_init) begin
+                        mode_reg     <= dec_start; 
+                        shared_state <= (current_op_mode ? i_ciphertext : i_plaintext) ^ shared_round_key;
+                        enc_done     <= 1'b0;
+                        dec_done     <= 1'b0;
+                    end 
+                    // Iterative Processing (Rounds 1-Nr)
+                    else if (shared_busy) begin
+                        shared_state <= shared_round_out;
+                    end
+
+                    // Completion Logic (Latching Result and Pulsing Done)
+                    if (shared_done_pulse) begin
+                        if (mode_reg) begin
+                            o_plaintext <= shared_round_out;
+                            dec_done     <= 1'b1;
+                        end else begin
+                            o_ciphertext <= shared_round_out;
+                            enc_done     <= 1'b1;
+                        end
+                    end else if (!shared_init) begin
+                        // Clear done pulses if we aren't finishing or starting
+                        enc_done <= 1'b0;
+                        dec_done <= 1'b0;
+                    end
                 end
             end
         end
