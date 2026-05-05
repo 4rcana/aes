@@ -1,9 +1,11 @@
+import crypto_pkg::*;
+
 // ----------------------------------------------------------------
 //              AES Iterative Controller (Generic)
 // ----------------------------------------------------------------
 module aes_controller_iterative #(
-    parameter [63:0] DIRECTION = "FORWARD",
-    parameter        KEY_BITS  = 128
+    parameter crypto_pkg::round_dir_t DIRECTION = DIR_FORWARD,
+    parameter integer                 KEY_BITS  = 128
 )(
     input  wire       clk,
     input  wire       rst_n,

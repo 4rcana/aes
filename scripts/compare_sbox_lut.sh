@@ -3,10 +3,14 @@
 # =================================================================
 # Configuration
 # =================================================================
-VERILOG_FILE="../rtl/sbox.v"
+# 1. ADDED: Path to your package file
+PKG_FILE="../rtl/crypto_pkg.sv"
+# 2. UPDATED: Ensure extension is .sv
+VERILOG_FILE="../rtl/sbox.sv"
 TOP_MODULE="sub_generic"
 WIDTH=128
 
+# Integer values for parameters (Enums map to 0, 1, 2)
 IMPL_LUT=0
 IMPL_CANRIGHT=1
 
@@ -30,21 +34,20 @@ run_bench() {
     local d_val=$4
 
     # Run Yosys
+    # 3. UPDATED: Read PKG_FILE first, then RTL_FILE
+    # 4. UPDATED: Changed SBOX_IMPL to SBOX_ARCH to match your code
     output=$(yosys -p "
+        read_verilog -sv ${PKG_FILE};
         read_verilog -sv ${VERILOG_FILE};
-        hierarchy -top ${TOP_MODULE} -chparam SBOX_IMPL ${i_val} -chparam DIRECTION ${d_val} -chparam WIDTH ${WIDTH};
+        hierarchy -top ${TOP_MODULE} -chparam SBOX_ARCH ${i_val} -chparam DIRECTION ${d_val} -chparam WIDTH ${WIDTH};
         synth -flatten;
         abc -lut 6;
         stat
     " 2>/dev/null)
 
-    # NEW ROBUST PARSING:
-    # 1. We look for a line that has a number followed by '$lut'
-    # 2. We use awk to ensure we only grab the line where $lut is the second column
-    # 3. This ignores the "ABC RESULTS..." summary text entirely.
+    # Parsing logic (remains the same)
     count=$(echo "$output" | awk '$2 == "$lut" {print $1; exit}' | tr -d '\r\n')
 
-    # If count is still empty, the module might be empty or had a synth error
     if [ -z "$count" ]; then
         if echo "$output" | grep -q "Number of cells"; then
             count=0

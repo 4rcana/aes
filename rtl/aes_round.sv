@@ -1,10 +1,12 @@
+import crypto_pkg::*;
+
 // ------------------------------------------------------------------------
 //                          Generic AES Round
 // ------------------------------------------------------------------------
 module aes_round_generic #(
-    parameter        KEY_BITS  = 128,      // 128, 192, or 256
-    parameter [63:0] SBOX_IMPL = "LUT",    // "LUT", "CANRIGHT"
-    parameter [63:0] DIRECTION = "FORWARD" // "FORWARD", "INVERSE", or "SHARED"
+    parameter integer                 KEY_BITS  = 128,
+    parameter crypto_pkg::sbox_arch_t SBOX_ARCH = SBOX_LUT,
+    parameter crypto_pkg::round_dir_t DIRECTION = DIR_FORWARD
 )(
     input  wire [3:0]   round_num,
     input  wire [127:0] in,
@@ -25,7 +27,7 @@ module aes_round_generic #(
     // --------------------------------------------------------------------
     wire [127:0] after_sub;
 
-    sub_generic #(.SBOX_IMPL(SBOX_IMPL), .DIRECTION(DIRECTION), .WIDTH(32'd128))
+    sub_generic #(.SBOX_ARCH(SBOX_ARCH), .DIRECTION(DIRECTION), .WIDTH(32'd128))
     u_sub (.in(in), .mode(mode), .out (after_sub));
 
     // --------------------------------------------------------------------

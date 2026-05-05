@@ -1,10 +1,12 @@
+import crypto_pkg::*;
+
 // ----------------------------------------------------------------
 //              AES Iterative Core (Full/Half Duplex)
 // ----------------------------------------------------------------
 module aes_core_iterative #(
-    parameter [63:0] SBOX_IMPL = "LUT",    // "LUT", "CANRIGHT"
-    parameter        KEY_BITS  = 128,      // 128, 192, 256
-    parameter [63:0] DUPLEX    = "FULL"    // "FULL" or "HALF"
+    parameter crypto_pkg::sbox_arch_t SBOX_ARCH = SBOX_LUT,
+    parameter crypto_pkg::duplex_t    DUPLEX    = DUPLEX_FULL,
+    parameter integer                 KEY_BITS  = 128
 )(
     input  wire                clk,
     input  wire                rst_n,
@@ -33,7 +35,7 @@ module aes_core_iterative #(
     localparam [3:0] Nr = Nk + 4'd6;
 
     generate
-        if (DUPLEX == "FULL") begin : ARCH_FULL
+        if (DUPLEX == DUPLEX_FULL) begin : ARCH_FULL
             // Internal Registers
             reg  [127:0] enc_state, dec_state;
             
@@ -50,7 +52,7 @@ module aes_core_iterative #(
             // Unified Scheduler in FULL mode
             aes_key_scheduler #(
                 .KEY_BITS(KEY_BITS), 
-                .SBOX_IMPL(SBOX_IMPL),
+                .SBOX_ARCH(SBOX_ARCH),
                 .DUPLEX(DUPLEX)
             ) u_ksi (
                 .clk(clk),
@@ -69,9 +71,9 @@ module aes_core_iterative #(
 
             // Forward Round
             aes_round_generic #(
-                .DIRECTION("FORWARD"),
+                .DIRECTION(DIR_FORWARD),
                 .KEY_BITS(KEY_BITS),
-                .SBOX_IMPL(SBOX_IMPL)
+                .SBOX_ARCH(SBOX_ARCH)
             ) u_ernd (
                 .round_num(enc_round_num), 
                 .in(enc_state),
@@ -81,7 +83,7 @@ module aes_core_iterative #(
             );
 
             aes_controller_iterative #(
-                .DIRECTION ("FORWARD"),
+                .DIRECTION (DIR_FORWARD),
                 .KEY_BITS  (KEY_BITS) 
             ) ctrl_enc (
                 .clk(clk),
@@ -110,9 +112,9 @@ module aes_core_iterative #(
 
             // Inverse Round
             aes_round_generic #(
-                .DIRECTION("INVERSE"),
+                .DIRECTION(DIR_INVERSE),
                 .KEY_BITS(KEY_BITS),
-                .SBOX_IMPL(SBOX_IMPL)
+                .SBOX_ARCH(SBOX_ARCH)
             ) u_drnd (
                 .round_num(dec_round_num),
                 .in(dec_state),
@@ -122,7 +124,7 @@ module aes_core_iterative #(
             );
 
             aes_controller_iterative #(
-                .DIRECTION ("INVERSE"),
+                .DIRECTION (DIR_INVERSE),
                 .KEY_BITS  (KEY_BITS)
             ) ctrl_dec (
                 .clk(clk),
@@ -171,7 +173,7 @@ module aes_core_iterative #(
             // Key Scheduler
             aes_key_scheduler #(
                 .KEY_BITS(KEY_BITS), 
-                .SBOX_IMPL(SBOX_IMPL),
+                .SBOX_ARCH(SBOX_ARCH),
                 .DUPLEX(DUPLEX)
             ) u_ksi (
                 .clk(clk),
@@ -187,7 +189,7 @@ module aes_core_iterative #(
             );
 
             aes_controller_iterative #(
-                .DIRECTION ("SHARED"),
+                .DIRECTION (DIR_SHARED),
                 .KEY_BITS  (KEY_BITS)
             ) ctrl_shared (
                 .clk(clk),
@@ -202,9 +204,9 @@ module aes_core_iterative #(
 
             // Round Logic (Round logic happens in cycles AFTER start, so mode_reg is fine)
             aes_round_generic #(
-                .DIRECTION("SHARED"), 
+                .DIRECTION(DIR_SHARED), 
                 .KEY_BITS(KEY_BITS), 
-                .SBOX_IMPL(SBOX_IMPL)
+                .SBOX_ARCH(SBOX_ARCH)
             ) u_shared_rnd (
                 .round_num(shared_round_num), 
                 .in(shared_state),

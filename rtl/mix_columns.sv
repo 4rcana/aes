@@ -1,8 +1,10 @@
+import crypto_pkg::*;
+
 // ----------------------------------------------------------------
 //                      Generic MixColumns Hub
 // ----------------------------------------------------------------
 module mix_columns_generic #(
-    parameter [63:0] DIRECTION = "FORWARD" // "FORWARD", "INVERSE", "SHARED"
+    parameter crypto_pkg::round_dir_t DIRECTION = DIR_FORWARD
 )(
     input  wire [127:0] in,
     input  wire         mode,              // 0:FORWARD, 1:INVERSE
@@ -24,7 +26,7 @@ endmodule
 //                  Generic Single Column Logic
 // ----------------------------------------------------------------
 module mix_single_col_generic #(
-    parameter [63:0] DIRECTION = "FORWARD"
+    parameter crypto_pkg::round_dir_t DIRECTION = DIR_FORWARD
 )(
     input  wire [31:0] in,
     input  wire        mode,
@@ -41,7 +43,7 @@ module mix_single_col_generic #(
 
     generate
         // --- 1. SPECIALIZED FORWARD (Encryption Lane) ---
-        if (DIRECTION == "FORWARD") begin : GEN_FORWARD
+        if (DIRECTION == DIR_FORWARD) begin : GEN_FORWARD
             assign out[31:24] = xtime(s0) ^ (xtime(s1) ^ s1) ^ s2 ^ s3;
             assign out[23:16] = s0 ^ xtime(s1) ^ (xtime(s2) ^ s2) ^ s3;
             assign out[15:8]  = s0 ^ s1 ^ xtime(s2) ^ (xtime(s3) ^ s3);
@@ -49,7 +51,7 @@ module mix_single_col_generic #(
         end
 
         // --- 2. SPECIALIZED INVERSE (Decryption Lane) ---
-        else if (DIRECTION == "INVERSE") begin : GEN_INVERSE
+        else if (DIRECTION == DIR_INVERSE) begin : GEN_INVERSE
             // Helper for 0e, 0b, 0d, 09
             function [7:0] mul(input [7:0] b, input [3:0] f);
                 reg [7:0] x2, x4, x8;

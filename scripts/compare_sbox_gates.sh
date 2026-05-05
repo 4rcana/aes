@@ -3,13 +3,14 @@
 # =================================================================
 # Configuration
 # =================================================================
-VERILOG_FILE="../rtl/sbox.v"
+PKG_FILE="../rtl/crypto_pkg.sv"
+RTL_FILE="../rtl/sbox.sv"
 TOP_MODULE="sub_generic"
-WIDTH=8 
+WIDTH=128 
 
-# Integer values for parameters
-IMPL_LUT=0
-IMPL_CANRIGHT=1
+# Integer values for parameters (These match the Enum values 0, 1, 2)
+ARCH_LUT=0
+ARCH_CANRIGHT=1
 
 DIR_FORWARD=0
 DIR_INVERSE=1
@@ -30,27 +31,16 @@ run_bench() {
     local d_name=$3
     local d_val=$4
 
-    # Run Yosys:
-    # We use 'synth -flatten' to get the total gate count for the whole block.
     output=$(yosys -p "
-        read_verilog -sv ${VERILOG_FILE};
-        hierarchy -top ${TOP_MODULE} -chparam SBOX_IMPL ${i_val} -chparam DIRECTION ${d_val} -chparam WIDTH ${WIDTH};
+        read_verilog -sv ${PKG_FILE};
+        read_verilog -sv ${RTL_FILE};
+        hierarchy -top ${TOP_MODULE} -chparam SBOX_ARCH ${i_val} -chparam DIRECTION ${d_val} -chparam WIDTH ${WIDTH};
         synth -flatten;
         stat
     " 2>/dev/null)
 
-    # ROBUST PARSER:
-    # 1. We look for lines containing "cells"
-    # 2. We take the VERY LAST occurrence (which is the Design Hierarchy total)
-    # 3. We extract only the numbers from that line
     count=$(echo "$output" | grep "cells" | tail -n 1 | tr -dc '0-9')
 
-    if [ -z "$count" ]; then
-        # If the above fails, try one more common Yosys format
-        count=$(echo "$output" | awk '/Number of cells:/ {print $NF}' | tr -dc '0-9')
-    fi
-
-    # If still empty, it's an actual error
     if [ -z "$count" ]; then
         count="ERR"
     fi
@@ -62,12 +52,12 @@ run_bench() {
 # Execution Matrix
 # =================================================================
 
-run_bench "LUT" "$IMPL_LUT" "FORWARD" "$DIR_FORWARD"
-run_bench "LUT" "$IMPL_LUT" "INVERSE" "$DIR_INVERSE"
-run_bench "LUT" "$IMPL_LUT" "SHARED"  "$DIR_SHARED"
+run_bench "LUT" "$ARCH_LUT" "FORWARD" "$DIR_FORWARD"
+run_bench "LUT" "$ARCH_LUT" "INVERSE" "$DIR_INVERSE"
+run_bench "LUT" "$ARCH_LUT" "SHARED"  "$DIR_SHARED"
 
 echo "------------------------------------------------------------"
 
-run_bench "CANRIGHT" "$IMPL_CANRIGHT" "FORWARD" "$DIR_FORWARD"
-run_bench "CANRIGHT" "$IMPL_CANRIGHT" "INVERSE" "$DIR_INVERSE"
-run_bench "CANRIGHT" "$IMPL_CANRIGHT" "SHARED"  "$DIR_SHARED"
+run_bench "CANRIGHT" "$ARCH_CANRIGHT" "FORWARD" "$DIR_FORWARD"
+run_bench "CANRIGHT" "$ARCH_CANRIGHT" "INVERSE" "$DIR_INVERSE"
+run_bench "CANRIGHT" "$ARCH_CANRIGHT" "SHARED"  "$DIR_SHARED"

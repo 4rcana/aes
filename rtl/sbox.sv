@@ -1,10 +1,12 @@
+import crypto_pkg::*;
+
 // ----------------------------------------------------------------
 //                  Generic N-bit Substitution
 // ----------------------------------------------------------------
 module sub_generic #(
-    parameter [63:0]  SBOX_IMPL = "LUT",
-    parameter [63:0]  DIRECTION = "FORWARD",
-    parameter integer WIDTH     = 128
+    parameter crypto_pkg::sbox_arch_t  SBOX_ARCH = SBOX_CANRIGHT,
+    parameter crypto_pkg::round_dir_t  DIRECTION = DIR_FORWARD,
+    parameter integer                  WIDTH     = 128
 )(
     input  wire [WIDTH-1:0] in,
     input  wire             mode,         // 0:FORWARD, 1:INVERSE
@@ -14,7 +16,7 @@ module sub_generic #(
     generate
         for (i = 0; i < (WIDTH/8); i = i + 1) begin : sbox_loop
             sbox_generic #(
-                .SBOX_IMPL(SBOX_IMPL), 
+                .SBOX_ARCH(SBOX_ARCH), 
                 .DIRECTION(DIRECTION)
             ) u_sb (
                 .in  (in [(WIDTH - 1) - i*8 -: 8]),
@@ -29,8 +31,8 @@ endmodule
 //                  Generic single byte SBOX
 // ----------------------------------------------------------------
 module sbox_generic #(
-    parameter [63:0] SBOX_IMPL = "LUT",      // "LUT", "CANRIGHT"
-    parameter [63:0] DIRECTION = "FORWARD"   // "FORWARD", "INVERSE", "SHARED"
+    parameter crypto_pkg::sbox_arch_t  SBOX_ARCH = SBOX_CANRIGHT,
+    parameter crypto_pkg::round_dir_t  DIRECTION = DIR_FORWARD
 )(
     input  wire [7:0] in,
     input  wire       mode,           // 0:FORWARD, 1:INVERSE
@@ -40,35 +42,35 @@ module sbox_generic #(
 
     generate
         // --- 1. LUT ARCHITECTURE ---
-        if (SBOX_IMPL == "LUT") begin : ARCH_LUT
+        if (SBOX_ARCH == SBOX_LUT) begin : ARCH_LUT
             wire [7:0] fwd_res, inv_res;
             
             // Explicitly handle instantiation to avoid floating wires
-            if (DIRECTION == "FORWARD" || DIRECTION == "SHARED") begin : GEN_FWD_LUT
+            if (DIRECTION == DIR_FORWARD || DIRECTION == DIR_SHARED) begin : GEN_FWD_LUT
                 sbox_lut u_fwd (.in(in), .out(fwd_res));
             end else begin : GEN_FWD_TIE
                 assign fwd_res = 8'h00; // Tie off if not built
             end
 
-            if (DIRECTION == "INVERSE" || DIRECTION == "SHARED") begin : GEN_INV_LUT
+            if (DIRECTION == DIR_INVERSE || DIRECTION == DIR_SHARED) begin : GEN_INV_LUT
                 inv_sbox_lut u_inv (.in(in), .out(inv_res));
             end else begin : GEN_INV_TIE
                 assign inv_res = 8'h00; // Tie off if not built
             end
 
             // Final output mapping
-            if (DIRECTION == "FORWARD")      assign out = fwd_res;
-            else if (DIRECTION == "INVERSE") assign out = inv_res;
-            else                             assign out = mode ? inv_res : fwd_res;
+            if (DIRECTION == DIR_FORWARD)      assign out = fwd_res;
+            else if (DIRECTION == DIR_INVERSE) assign out = inv_res;
+            else                               assign out = mode ? inv_res : fwd_res;
         end 
 
         // --- 2. CANRIGHT ARCHITECTURE ---
-        else if (SBOX_IMPL == "CANRIGHT") begin : ARCH_CANRIGHT
+        else if (SBOX_ARCH == SBOX_CANRIGHT) begin : ARCH_CANRIGHT
             wire canright_mode;
             
-            if (DIRECTION == "FORWARD") begin : GEN_MODE_FWD
+            if (DIRECTION == DIR_FORWARD) begin : GEN_MODE_FWD
                 assign canright_mode = 1'b0;
-            end else if (DIRECTION == "INVERSE") begin : GEN_MODE_INV
+            end else if (DIRECTION == DIR_INVERSE) begin : GEN_MODE_INV
                 assign canright_mode = 1'b1;
             end else begin : GEN_MODE_SHARED
                 assign canright_mode = mode;

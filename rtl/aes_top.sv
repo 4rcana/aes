@@ -1,9 +1,11 @@
+import crypto_pkg::*;
+
 module aes_top #(
-    parameter [63:0] SBOX_IMPL  = "LUT",       // LUT, CANRIGHT. 
-    parameter        KEY_BITS   = 128,         // 128, 192, 256.
-    parameter        PIPE_DEPTH = 1,           // PIPELINED DESIGN NOT YET IMPLEMENTED.
-    parameter [63:0] DUPLEX     = "HALF",      // HALF, FULL.
-    parameter [63:0] MODE       = "ECB"        // ECB, CBC.
+    parameter crypto_pkg::sbox_arch_t SBOX_ARCH  = SBOX_LUT,       // SBOX_LUT, SBOX_CANRIGHT. 
+    parameter crypto_pkg::duplex_t    DUPLEX     = DUPLEX_HALF,    // DUPLEX_HALF, DUPLEX_FULL.
+    parameter crypto_pkg::aes_mode_t  MODE       = AES_ECB,        // AES_ECB, AES_CBC.
+    parameter integer                 KEY_BITS   = 128,            // 128, 192, 256.
+    parameter integer                 PIPE_DEPTH = 1               // PIPELINED DESIGN NOT YET ARCHEMENTED.
 )(
     input  wire                clk,
     input  wire                rst_n,
@@ -47,7 +49,7 @@ module aes_top #(
     // 1. MODE LOGIC: XORs and Feedback Registers
     // ----------------------------------------------------------------
     generate
-        if (MODE == "CBC") begin : GEN_MODE_CBC
+        if (MODE == AES_CBC) begin : GEN_MODE_CBC
             reg [127:0] enc_feedback;
             reg [127:0] dec_feedback;
             reg [127:0] dec_buffer;
@@ -109,7 +111,7 @@ module aes_top #(
     generate
         if (PIPE_DEPTH == 1) begin : ARCH_ITERATIVE
             aes_core_iterative #(
-                .SBOX_IMPL (SBOX_IMPL),
+                .SBOX_ARCH (SBOX_ARCH),
                 .KEY_BITS  (KEY_BITS),
                 .DUPLEX    (DUPLEX)
             ) u_core (

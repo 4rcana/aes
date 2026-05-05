@@ -1,3 +1,5 @@
+import crypto_pkg::*;
+
 // ----------------------------------------------------------------
 //                  AES Unified Key Scheduler
 // ----------------------------------------------------------------
@@ -6,9 +8,9 @@
 // DUPLEX="HALF": 4 internal banks (Shared lanes).
 // ----------------------------------------------------------------
 module aes_key_scheduler #(
-    parameter        KEY_BITS  = 128,
-    parameter [63:0] SBOX_IMPL = "LUT",
-    parameter [63:0] DUPLEX    = "FULL"
+    parameter integer                 KEY_BITS  = 128,
+    parameter crypto_pkg::sbox_arch_t SBOX_ARCH = SBOX_LUT,
+    parameter crypto_pkg::duplex_t    DUPLEX    = DUPLEX_FULL
 )(
     input  wire                 clk,
     input  wire                 rst_n,
@@ -56,8 +58,8 @@ module aes_key_scheduler #(
     wire [31:0] sw_out;
 
     sub_generic #(
-        .SBOX_IMPL(SBOX_IMPL),
-        .DIRECTION("FORWARD"),
+        .SBOX_ARCH(SBOX_ARCH),
+        .DIRECTION(DIR_FORWARD),
         .WIDTH(32'd32)
     ) u_sw (
         .in(sw_in),
@@ -110,7 +112,7 @@ module aes_key_scheduler #(
     wire [31:0] out_b [0:3];
 
     // Address translation: Reverse index if in Inverse mode
-    wire [3:0] addr_r_a = (DUPLEX == "HALF" && mode_a) ? (Nr - round_num_a) : round_num_a;
+    wire [3:0] addr_r_a = (DUPLEX == DUPLEX_HALF && mode_a) ? (Nr - round_num_a) : round_num_a;
     wire [3:0] addr_r_b = (Nr - round_num_b);
 
     genvar k;
@@ -123,7 +125,7 @@ module aes_key_scheduler #(
                 .addr_r(addr_r_a), .data_out(out_a[k])
             );
 
-            if (DUPLEX == "FULL") begin : ARCH_FULL
+            if (DUPLEX == DUPLEX_FULL) begin : ARCH_FULL
                 // Set B (Shadow copy to resolve Full-Duplex port conflict)
                 lutram_32x16 bank_b (
                     .clk(clk), .we(expanding && (idx[1:0] == 2'(k))),
@@ -143,13 +145,13 @@ module aes_key_scheduler #(
     wire [127:0] raw_b = {out_b[0], out_b[1], out_b[2], out_b[3]};
     wire [127:0] mixed_a, mixed_b;
 
-    mix_columns_generic #(.DIRECTION("INVERSE"))
+    mix_columns_generic #(.DIRECTION(DIR_INVERSE))
     u_mcg_a (.in(raw_a), .mode(1'b1), .out(mixed_a));
-    mix_columns_generic #(.DIRECTION("INVERSE"))
+    mix_columns_generic #(.DIRECTION(DIR_INVERSE))
     u_mcg_b (.in(raw_b), .mode(1'b1), .out(mixed_b));
 
     // Intermediate keys (1 to Nr-1) are transformed for Decryption
-    wire a_needs_inv = (DUPLEX == "HALF") ? (mode_a && round_num_a > 4'd0 && round_num_a < Nr) : 1'b0;
+    wire a_needs_inv = (DUPLEX == DUPLEX_HALF) ? (mode_a && round_num_a > 4'd0 && round_num_a < Nr) : 1'b0;
     wire b_needs_inv = (round_num_b > 4'd0 && round_num_b < Nr);
 
     assign key_out_a = a_needs_inv ? mixed_a : raw_a;

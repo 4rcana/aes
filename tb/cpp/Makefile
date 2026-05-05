@@ -1,10 +1,37 @@
 # --- Parameters (Default values) ---
 KEY_BITS   ?= 128
-SBOX_IMPL  ?= LUT
+SBOX_ARCH  ?= LUT
 DUPLEX     ?= HALF
 PIPE_DEPTH ?= 1
 MODE       ?= ECB
 TEST       ?= KAT
+
+# =================================================================
+# Parameter Mapping (Convert text to Enum Integers for RTL)
+# =================================================================
+
+# SBOX_ARCH: LUT=0, CANRIGHT=1
+ifeq ($(SBOX_ARCH),CANRIGHT)
+    SBOX_VAL = 1
+else
+    SBOX_VAL = 0
+endif
+
+# DUPLEX: HALF=0, FULL=1
+ifeq ($(DUPLEX),FULL)
+    DUP_VAL = 1
+else
+    DUP_VAL = 0
+endif
+
+# MODE: ECB=0, CBC=1
+ifeq ($(MODE),CBC)
+    MODE_VAL = 1
+else
+    MODE_VAL = 0
+endif
+
+# =================================================================
 
 # --- File Paths ---
 TOP_MODULE   = aes_top
@@ -18,19 +45,15 @@ PYTHON    = python3
 VERILATOR = verilator
 
 # --- Source Files ---
-# Using wildcard to ensure all dependencies are tracked
-V_SRCS      = $(wildcard $(V_DIR)/*.v)
+V_SRCS      = $(wildcard $(V_DIR)/*.sv)
 CPP_SRCS    = tb_aes_top_iterative.cpp
 
 # --- Logic to select .rsp files based on TEST type ---
 ifeq ($(TEST),MCT)
-    # Monte Carlo Tests: e.g., ECBMCT128.rsp
     RSP_FILES = $(VECTOR_DIR)/$(MODE)MCT$(KEY_BITS).rsp
 else ifeq ($(TEST),MMT)
-    # Multi-block Message Tests: e.g., ECBMMT128.rsp
     RSP_FILES = $(VECTOR_DIR)/$(MODE)MMT$(KEY_BITS).rsp
 else
-    # KAT (Known Answer Tests): Matches VarTxt and VarKey
     RSP_FILES = $(VECTOR_DIR)/$(MODE)Var*$(KEY_BITS).rsp
 endif
 
@@ -39,14 +62,16 @@ VFLAGS      = --cc --exe --build -j 0 --trace
 VFLAGS     += -y $(V_DIR)
 VFLAGS     += --top-module $(TOP_MODULE)
 VFLAGS     += --trace-max-array 1024
-# Pass parameters to Verilog
+
+# Pass the MAPPED INTEGER values to Verilog Parameters
 VFLAGS     += -GKEY_BITS=$(KEY_BITS) 
-VFLAGS     += -GSBOX_IMPL=\"$(SBOX_IMPL)\" 
-VFLAGS     += -GDUPLEX=\"$(DUPLEX)\"
-VFLAGS     += -GMODE=\"$(MODE)\"
-# Pass parameters to C++
+VFLAGS     += -GSBOX_ARCH=$(SBOX_VAL) 
+VFLAGS     += -GDUPLEX=$(DUP_VAL)
+VFLAGS     += -GMODE=$(MODE_VAL)
+
+# Pass string defines to C++ (Keep these as strings for C++ logic if needed)
 CPP_DEFINES += -DKEY_BITS=$(KEY_BITS)
-CPP_DEFINES += -DSBOX_IMPL=\"$(SBOX_IMPL)\"
+CPP_DEFINES += -DSBOX_ARCH=\"$(SBOX_ARCH)\"
 CPP_DEFINES += -DDUPLEX=\"$(DUPLEX)\"
 CPP_DEFINES += -DMODE=\"$(MODE)\"
 CPP_DEFINES += -DTEST_$(TEST)
@@ -62,7 +87,6 @@ TARGET     = obj_dir/V$(TOP_MODULE)
 all: build run
 
 # 1. Generate the header file via Python
-# We force this to run if the RSP_FILES list changes or if a parameter is passed
 $(VECTORS_H): $(PARSE_SCRIPT) $(RSP_FILES)
 	@echo "--- Generating Test Vectors: [$(TEST)] $(MODE) $(KEY_BITS)-bit ---"
 	@if [ -z "$(RSP_FILES)" ]; then echo "Error: No .rsp files found for $(TEST)"; exit 1; fi
@@ -72,7 +96,7 @@ $(VECTORS_H): $(PARSE_SCRIPT) $(RSP_FILES)
 build: $(VECTORS_H) $(TARGET)
 
 $(TARGET): $(V_SRCS) $(CPP_SRCS) $(VECTORS_H)
-	@echo "--- Building Simulation for $(DUPLEX) Duplex / $(SBOX_IMPL) ---"
+	@echo "--- Building Simulation for $(DUPLEX) Duplex / $(SBOX_ARCH) ---"
 	$(VERILATOR) $(VFLAGS) $(V_SRCS) $(CPP_SRCS)
 
 # 3. Run
@@ -88,13 +112,13 @@ help:
 	@echo "Parameters:"
 	@echo "  TEST       : KAT, MCT, MMT  (Current: $(TEST))"
 	@echo "  KEY_BITS   : 128, 192, 256  (Current: $(KEY_BITS))"
-	@echo "  SBOX_IMPL  : LUT, CANRIGHT  (Current: $(SBOX_IMPL))"
+	@echo "  SBOX_ARCH  : LUT, CANRIGHT  (Current: $(SBOX_ARCH))"
 	@echo "  DUPLEX     : HALF, FULL     (Current: $(DUPLEX))"
 	@echo "  MODE       : ECB, CBC       (Current: $(MODE))"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make TEST=MCT KEY_BITS=256"
-	@echo "  make TEST=KAT DUPLEX=FULL SBOX_IMPL=CANRIGHT"
+	@echo "  make TEST=KAT DUPLEX=FULL SBOX_ARCH=CANRIGHT"
 	@echo ""
 
 # 5. Cleanup
