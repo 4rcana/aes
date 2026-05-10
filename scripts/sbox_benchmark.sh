@@ -1,19 +1,19 @@
 #!/bin/bash
 
 # =================================================================
-# Configuration
+# Configuration (Canright 2005 and Weste & Harris Methodology)
 # =================================================================
 PKG_FILE="../rtl/crypto_pkg.sv"
 RTL_FILE="../rtl/sbox.sv"
 TOP_MODULE="sub_generic"
 WIDTH=128
+KEY_BITS=128  # Used to determine throughput cycles (128->11, 192->13, 256->15)
 
-# Technology FO4 Delays (ps)
+# Technology FO4 Delays (ps) 
+# Source: Krishna et al., 2021 (Springer LNEE 722 / UMC FO4 Data)
 FO4_65=31.35; FO4_40=23.35; FO4_28=18.12
 
-# Formula Coefficients [Source: Weste & Harris, CMOS VLSI Design, 4th Ed.]
-# O_REG=7 accounts for clk-to-q, setup, clock skew, and jitter.
-# BETA_W=0.30 is a realistic 30% wire delay overhead for congested logic.
+# O_REG=7 (Overhead), BETA_W=0.30 (30% Wire delay)
 O_REG=7.0        
 BETA_W=0.30      
 
@@ -67,9 +67,7 @@ run_bench() {
         }
     ')
 
-    # 4. Calculate Dynamic Complexity Factor (k) in FO4 units
-    # Logical Effort (g) and Parasitic Delay (p) values sourced from:
-    # [Weste & Harris, CMOS VLSI Design, 4th Ed, Table 4.2 & 4.3]
+    # 4. Calculate Dynamic Complexity Factor (k) in FO4 units [Weste & Harris Tables 4.2 & 4.3]
     k_val=$(echo "$raw_stats" | awk -v h="$h_avg" '
         BEGIN { total_delay = 0; total_gates = 0 }
         /\$_NAND_/   || /\$_ANDNOT_/ { d = (1.333 * h + 2.0); total_delay += $1 * d; total_gates += $1 }
@@ -81,9 +79,7 @@ run_bench() {
         END { if (total_gates > 0) printf "%.3f", (total_delay / total_gates) / 5; else print "1.200" }
     ')
 
-    # 5. AREA ESTIMATION (GE)
-    # Weights sourced from: [Canright, J. (2005). "A very compact S-box for AES", Section 4.1]
-    # Equivalencies: NAND=1.00, NOT=0.75, XOR/AND/MUX=1.75
+    # 5. AREA ESTIMATION (GE) [Canright 2005 Weights]
     ge_total=$(echo "$raw_stats" | awk '
         /\$_NAND_/ || /\$_NOR_/ || /\$_ANDNOT_/ || /\$_ORNOT_/ { sum += $1 * 1.00 }
         /\$_NOT_/                                              { sum += $1 * 0.75 }
@@ -98,39 +94,52 @@ run_bench() {
     echo "$raw_stats" | grep -v "\$scopeinfo"
 
     echo -e "\n--- CALCULATED ESTIMATES ---"
+    echo "Estimated Area (GE):      $ge_total"
     echo "Avg Fan-out (h):          $h_avg"
-    echo "Gate Complexity (k):      $k_val FO4/level"
-    echo "Logic Depth (LD):         $depth levels"
+    echo "Gate Complexity (k):      $k_val"
+    echo "Logic Depth (LD):         $depth"
 
     if [[ "$depth" != "0" ]]; then
-        # Calculate Cycle Time in FO4 units first: (LD * k + Oreg) * (1 + beta_w)
+        # Cycle Time in FO4: (LD * k + Oreg) * (1 + beta_w)
         fo4_cycle=$(awk "BEGIN { print ($depth * $k_val + $O_REG) * (1 + $BETA_W) }")
-        echo "Cycle Time (FO4):         $(printf "%.2f" $fo4_cycle) FO4"
+        echo "Cycle Time (FO4):         $(printf "%.2f" $fo4_cycle)"
 
-        calc_fmax() {
+        # Determine cycles per block based on iterative architecture (11, 13, 15)
+        if [ "$KEY_BITS" -eq 128 ]; then cycles=11; 
+        elif [ "$KEY_BITS" -eq 192 ]; then cycles=13; 
+        else cycles=15; fi
+
+        calc_metrics() {
             local dfo4=$1
             awk "BEGIN {
                 t_clk = $fo4_cycle * $dfo4;
                 f_max = 1000000 / t_clk;
-                printf \"%.2f MHz (Tclk = %.2f ps)\", f_max, t_clk;
+                # Throughput (Mbps) = (128 bits * Fmax_MHz) / Cycles
+                tp = (128 * f_max) / $cycles;
+                # TPA = Mbps / GE
+                tpa = tp / $ge_total;
+                printf \"%.2f MHz | TP: %.2f Mbps | TPA: %.4f\", f_max, tp, tpa;
             }"
         }
-        echo "Max Frequency (UMC65):    $(calc_fmax $FO4_65)"
-        echo "Max Frequency (UMC40):    $(calc_fmax $FO4_40)"
-        echo "Max Frequency (UMC28):    $(calc_fmax $FO4_28)"
+        echo "Metrics (UMC65):          $(calc_metrics $FO4_65)"
+        echo "Metrics (UMC40):          $(calc_metrics $FO4_40)"
+        echo "Metrics (UMC28):          $(calc_metrics $FO4_28)"
     fi
 
-    echo "Estimated Area:           $ge_total GE"
     echo "============================================================================"
     echo -e "\n"
     rm -f $LOG
 }
+# =================================================================
+# Execution Matrix
+# =================================================================
 
-# Run execution matrix
 run_bench "LUT" "$ARCH_LUT" "FORWARD" "$DIR_FORWARD"
 run_bench "LUT" "$ARCH_LUT" "INVERSE" "$DIR_INVERSE"
 run_bench "LUT" "$ARCH_LUT" "SHARED"  "$DIR_SHARED"
+
 echo "------------------------------------------------------------"
+
 run_bench "CANRIGHT" "$ARCH_CANRIGHT" "FORWARD" "$DIR_FORWARD"
 run_bench "CANRIGHT" "$ARCH_CANRIGHT" "INVERSE" "$DIR_INVERSE"
 run_bench "CANRIGHT" "$ARCH_CANRIGHT" "SHARED"  "$DIR_SHARED"
