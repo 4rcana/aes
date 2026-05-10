@@ -1,3 +1,5 @@
 tb/cpp/obj_dir/
 tb/cpp/*.vcd
 tb/cpp/vectors.h
+scripts/abc.history
+scripts/schematics/synthesis.log
