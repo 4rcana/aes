@@ -7,7 +7,7 @@ import crypto_pkg::*;
 // DUPLEX="FULL": 8 internal banks (Independent Enc/Dec lanes).
 // DUPLEX="HALF": 4 internal banks (Shared lanes).
 // ----------------------------------------------------------------
-module aes_key_scheduler #(
+module aes_key_scheduler_iterative #(
     parameter integer                 KEY_BITS  = 128,
     parameter crypto_pkg::sbox_arch_t SBOX_ARCH = SBOX_LUT,
     parameter crypto_pkg::duplex_t    DUPLEX    = DUPLEX_FULL

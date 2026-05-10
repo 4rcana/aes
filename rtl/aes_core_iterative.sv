@@ -50,7 +50,7 @@ module aes_core_iterative #(
             wire [127:0] enc_round_out,     dec_round_out;
 
             // Unified Scheduler in FULL mode
-            aes_key_scheduler #(
+            aes_key_scheduler_iterative #(
                 .KEY_BITS(KEY_BITS), 
                 .SBOX_ARCH(SBOX_ARCH),
                 .DUPLEX(DUPLEX)
@@ -171,7 +171,7 @@ module aes_core_iterative #(
             wire current_op_mode = shared_busy ? mode_reg : dec_start;
 
             // Key Scheduler
-            aes_key_scheduler #(
+            aes_key_scheduler_iterative #(
                 .KEY_BITS(KEY_BITS), 
                 .SBOX_ARCH(SBOX_ARCH),
                 .DUPLEX(DUPLEX)
