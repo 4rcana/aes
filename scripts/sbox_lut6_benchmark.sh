@@ -3,9 +3,7 @@
 # =================================================================
 # Configuration
 # =================================================================
-# 1. ADDED: Path to your package file
 PKG_FILE="../rtl/crypto_pkg.sv"
-# 2. UPDATED: Ensure extension is .sv
 VERILOG_FILE="../rtl/sbox.sv"
 TOP_MODULE="sub_generic"
 WIDTH=128
@@ -21,8 +19,8 @@ DIR_SHARED=2
 # =================================================================
 # Table Header
 # =================================================================
-printf "%-15s | %-10s | %-10s | %-10s\n" "Implementation" "Direction" "Width" "LUT Count"
-echo "------------------------------------------------------------"
+printf "%-15s | %-10s | %-6s | %-10s | %-12s\n" "Implementation" "Direction" "Bits" "LUT Count" "Logic Depth"
+echo "----------------------------------------------------------------------------"
 
 # =================================================================
 # Benchmark Function
@@ -42,10 +40,10 @@ run_bench() {
         hierarchy -top ${TOP_MODULE} -chparam SBOX_ARCH ${i_val} -chparam DIRECTION ${d_val} -chparam WIDTH ${WIDTH};
         synth -flatten;
         abc -lut 6;
+        ltp;
         stat
     " 2>/dev/null)
 
-    # Parsing logic (remains the same)
     count=$(echo "$output" | awk '$2 == "$lut" {print $1; exit}' | tr -d '\r\n')
 
     if [ -z "$count" ]; then
@@ -56,7 +54,10 @@ run_bench() {
         fi
     fi
 
-    printf "%-15s | %-10s | %-10s | %-10s\n" "$i_name" "$d_name" "$WIDTH" "$count"
+    depth=$(echo "$output" | grep "length=" | head -n 1 | sed 's/.*length=\([0-9]*\).*/\1/')
+    if [ -z "$depth" ]; then depth="0"; fi
+
+    printf "%-15s | %-10s | %-6s | %-10s | %-12s\n" "$i_name" "$d_name" "$WIDTH" "$count" "$depth"
 }
 
 # =================================================================
@@ -67,7 +68,7 @@ run_bench "LUT" "$IMPL_LUT" "FORWARD" "$DIR_FORWARD"
 run_bench "LUT" "$IMPL_LUT" "INVERSE" "$DIR_INVERSE"
 run_bench "LUT" "$IMPL_LUT" "SHARED"  "$DIR_SHARED"
 
-echo "------------------------------------------------------------"
+echo "----------------------------------------------------------------------------"
 
 run_bench "CANRIGHT" "$IMPL_CANRIGHT" "FORWARD" "$DIR_FORWARD"
 run_bench "CANRIGHT" "$IMPL_CANRIGHT" "INVERSE" "$DIR_INVERSE"
