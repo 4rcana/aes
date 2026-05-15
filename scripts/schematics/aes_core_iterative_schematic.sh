@@ -12,7 +12,7 @@ FILES=(
     "${RTL_DIR}/shift_rows.sv"
     "${RTL_DIR}/mix_columns.sv"
     "${RTL_DIR}/aes_round.sv"
-    "${RTL_DIR}/aes_key_schedule_iterative.sv"
+    "${RTL_DIR}/aes_key_scheduler_iterative.sv"
     "${RTL_DIR}/aes_controller_iterative.sv"
     "${RTL_DIR}/aes_core_iterative.sv"
 )

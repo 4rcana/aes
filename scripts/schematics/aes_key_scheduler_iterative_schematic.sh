@@ -2,7 +2,7 @@
 # =================================================================
 # AES Key Schedule Iterative Module Schematic Generator
 # =================================================================
-RTL_DIR="../../rtl"
+RTL_DIR="../../rtl/backup"
 TOP_MODULE="aes_key_scheduler_iterative"
 
 # List all files in specific order to satisfy dependencies
@@ -43,10 +43,15 @@ yosys -p "
 " 2>&1 | tee synthesis.log
 
 # =================================================================
-# Clean up paramod names in JSON
+# Clean up paramod names in JSON with more aggressive patterns
 # =================================================================
 if [ -f "${TOP_MODULE}_schematic.json" ]; then
     echo "Cleaning up module names..."
+    
+    # 1. Remove $paramod\module\PARAM=value format
+    sed -i "s/\\\$paramod\\\\[^\\\\]*\\\\\\([^\\\\]*\\)\\\\[^\"]*/\\1/g" ${TOP_MODULE}_schematic.json
+    
+    # 2. Remove $paramod$hash\module format
     sed -i 's/\$paramod\$[0-9a-f]*\\//g' ${TOP_MODULE}_schematic.json
     
     echo "✓ Schematic JSON generated successfully"

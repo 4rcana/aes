@@ -3,3 +3,9 @@ tb/cpp/*.vcd
 tb/cpp/vectors.h
 scripts/abc.history
 scripts/schematics/synthesis.log
+scripts/LEC/synthesis.log
+scripts/LEC/abc.history
+scripts/benchmark/synthesis.log
+scripts/benchmark/abc.history
+scripts/schematics/*.svg
+
