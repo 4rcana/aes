@@ -160,6 +160,8 @@ run_bench() {
 # --- Execution Matrix ---
 
 run_bench "LUT" "$ARCH_LUT" "HALF" "$DUPLEX_HALF" 128
+run_bench "LUT" "$ARCH_LUT" "FULL" "$DUPLEX_FULL" 128
 run_bench "CANRIGHT" "$ARCH_CANRIGHT" "HALF" "$DUPLEX_HALF" 128
+run_bench "CANRIGHT" "$ARCH_CANRIGHT" "FULL" "$DUPLEX_FULL" 128
 
 echo "All detailed tool outputs saved to $FINAL_LOG"

@@ -1,11 +1,9 @@
 tb/cpp/obj_dir/
 tb/cpp/*.vcd
 tb/cpp/vectors.h
-scripts/abc.history
 scripts/schematics/synthesis.log
+scripts/schematics/*.svg
 scripts/LEC/synthesis.log
 scripts/LEC/abc.history
-scripts/benchmark/synthesis.log
-scripts/benchmark/abc.history
-scripts/schematics/*.svg
-
+scripts/benchmarks/synthesis.log
+scripts/benchmarks/abc.history

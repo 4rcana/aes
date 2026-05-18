@@ -124,8 +124,8 @@ module aes_core_iterative #(
             );
 
             aes_controller_iterative #(
-                .DIRECTION (DIR_INVERSE),
-                .KEY_BITS  (KEY_BITS)
+                .DIRECTION(DIR_INVERSE),
+                .KEY_BITS(KEY_BITS)
             ) ctrl_dec (
                 .clk(clk),
                 .rst_n(rst_n),
