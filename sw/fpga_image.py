@@ -5,9 +5,9 @@ from PIL import Image
 
 # --- Configuration ---
 PORT = '/dev/ttyUSB1'
-BAUD = 9600
+BAUD = 576000
 KEY_HEX = "80000000000000000000000000000000" # Standard NIST Key
-INPUT_IMAGE = "input.png"
+INPUT_IMAGE = "input.jpg"
 ENCRYPTED_IMAGE = "encrypted.png"
 DECRYPTED_IMAGE = "decrypted.png"
 

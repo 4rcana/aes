@@ -2,7 +2,7 @@
 
 # =================================================================
 # Methodology: 
-# Area: Canright (2005) GE weights
+# Area: Canright (2005) GE weights (NAND2=1.0, XOR2=1.75, DFF=6.0)
 # Timing: Weste & Harris Logical Effort (FO4 Methodology)
 # Technology: UMC CMOS (65nm, 40nm, 28nm)
 # =================================================================
@@ -12,6 +12,7 @@ PKG_FILE="${RTL_DIR}/crypto_pkg.sv"
 TOP_MODULE="aes_key_scheduler_iterative"
 
 # Technology FO4 Delays (ps) 
+# Source: Krishna et al., 2021 (Springer LNEE 722 / UMC FO4 Data)
 FO4_65=31.35; FO4_40=23.35; FO4_28=18.12
 
 # Delay Model Constants
@@ -42,7 +43,13 @@ run_bench() {
     yosys -ql "$TEMP_LOG" -p "
         read_verilog -sv ${PKG_FILE};
         $(for f in ${RTL_DIR}/*.sv; do [[ "$f" != *"crypto_pkg.sv" ]] && echo "read_verilog -sv $f;"; done)
-        hierarchy -top ${TOP_MODULE} -chparam SBOX_ARCH ${a_val} -chparam DUPLEX ${d_val} -chparam KEY_BITS ${k_bits};
+        
+        # Passing KEY_BITS as a parameter
+        hierarchy -top ${TOP_MODULE} \
+                  -chparam SBOX_ARCH ${a_val} \
+                  -chparam DUPLEX ${d_val} \
+                  -chparam KEY_BITS ${k_bits};
+        
         synth -flatten;
         abc -g gates;
         stat;
@@ -50,7 +57,6 @@ run_bench() {
     # Extract stats from Pass 1 (Including Flip-Flops)
     area_stats=$(tac "$TEMP_LOG" | awk '/^=== '"$TOP_MODULE"' ===/ {exit} {print}' | tac | awk '/cells/ || /^[[:space:]]+[0-9]+[[:space:]]+\$_/')
     
-    # Save Pass 1 to Master Log
     echo -e "\n--- CONFIG: $a_name | $d_name | $k_bits (Pass 1: Area) ---\n" >> "$FINAL_LOG"
     cat "$TEMP_LOG" >> "$FINAL_LOG"
 
@@ -58,7 +64,12 @@ run_bench() {
     yosys -ql "$TEMP_LOG" -p "
         read_verilog -sv ${PKG_FILE};
         $(for f in ${RTL_DIR}/*.sv; do [[ "$f" != *"crypto_pkg.sv" ]] && echo "read_verilog -sv $f;"; done)
-        hierarchy -top ${TOP_MODULE} -chparam SBOX_ARCH ${a_val} -chparam DUPLEX ${d_val} -chparam KEY_BITS ${k_bits};
+        
+        hierarchy -top ${TOP_MODULE} \
+                  -chparam SBOX_ARCH ${a_val} \
+                  -chparam DUPLEX ${d_val} \
+                  -chparam KEY_BITS ${k_bits};
+        
         synth -flatten;
         # Isolate combinational round math
         expose -dff;
@@ -71,14 +82,12 @@ run_bench() {
     depth=$(echo "$ltp_line" | sed 's/.*length=\([0-9]*\).*/\1/')
     depth="${depth:-0}"
 
-    # Save Pass 2 to Master Log
     echo -e "\n--- CONFIG: $a_name | $d_name | $k_bits (Pass 2: Timing) ---\n" >> "$FINAL_LOG"
     cat "$TEMP_LOG" >> "$FINAL_LOG"
 
     # --- CALCULATIONS ---
 
     # 1. Total GE Area (Including Logic Gates and DFFs)
-    # Weights: NAND/NOR=1, NOT=0.75, XOR/MUX=1.75, DFF=6.0
     ge_total=$(echo "$area_stats" | awk '
         /\$_NAND_/ || /\$_NOR_/ || /\$_ANDNOT_/ || /\$_ORNOT_/ { sum += $1 * 1.00 }
         /\$_NOT_/                                              { sum += $1 * 0.75 }
@@ -90,6 +99,7 @@ run_bench() {
     ')
 
     # 2. Average Fan-out (h) from Pass 1
+    # Primary inputs: Initial key bits + clk, rst, load, next signals
     local pi_count=$((k_bits + 4))
     h_avg=$(echo "$area_stats" | awk -v pi="$pi_count" '
         BEGIN { inputs = 0; outputs = 0 }
@@ -134,7 +144,7 @@ run_bench() {
         fo4_cycle=$(awk "BEGIN { printf \"%.2f\", ($depth * $k_val + $O_REG) * (1 + $BETA_W) }")
         echo "Cycle Time (FO4):          $fo4_cycle"
 
-        # Determine throughut cycles (standard iterative AES: N_rounds + 1)
+        # Determine throughut cycles (128->11, 192->13, 256->15)
         if [ "$k_bits" -eq 128 ]; then cycles=11; 
         elif [ "$k_bits" -eq 192 ]; then cycles=13; 
         else cycles=15; fi
@@ -159,9 +169,14 @@ run_bench() {
 
 # --- Execution Matrix ---
 
+# 128-bit Testing
 run_bench "LUT" "$ARCH_LUT" "HALF" "$DUPLEX_HALF" 128
 run_bench "LUT" "$ARCH_LUT" "FULL" "$DUPLEX_FULL" 128
-run_bench "CANRIGHT" "$ARCH_CANRIGHT" "HALF" "$DUPLEX_HALF" 128
-run_bench "CANRIGHT" "$ARCH_CANRIGHT" "FULL" "$DUPLEX_FULL" 128
+
+echo "------------------------------------------------------------"
+
+# 256-bit Testing
+run_bench "LUT" "$ARCH_LUT" "HALF" "$DUPLEX_HALF" 256
+run_bench "LUT" "$ARCH_LUT" "FULL" "$DUPLEX_FULL" 256
 
 echo "All detailed tool outputs saved to $FINAL_LOG"

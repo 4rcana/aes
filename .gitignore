@@ -8,3 +8,4 @@ scripts/LEC/abc.history
 scripts/benchmarks/synthesis.log
 scripts/benchmarks/abc.history
 sw/*.png
+sw/*.jpg

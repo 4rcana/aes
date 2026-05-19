@@ -7,7 +7,7 @@ def slow_print(msg):
     sys.stdout.write(msg)
     sys.stdout.flush()
 
-def run_visual_test(port='/dev/ttyUSB1', baud=9600):
+def run_visual_test(port='/dev/ttyUSB1', baud=576000):
     try:
         ser = serial.Serial(port, baud, timeout=2)
         time.sleep(2) # Wait for Basys 3 reset
@@ -29,7 +29,7 @@ def run_visual_test(port='/dev/ttyUSB1', baud=9600):
         for b in key_bytes:
             ser.write(bytes([b]))
             slow_print(f"{b:02x} ")
-            time.sleep(0.05) # Delay to watch it flow
+            time.sleep(0.05)
         print(" | DONE")
 
         time.sleep(0.2) # Small gap between commands
@@ -56,7 +56,7 @@ def run_visual_test(port='/dev/ttyUSB1', baud=9600):
                 hex_val = byte_in.hex()
                 captured_hex += hex_val
                 slow_print(f"{hex_val} ")
-                time.sleep(0.1) # Watch the FPGA reply byte-by-byte
+                time.sleep(0.1)
             else:
                 print("\n[!] Timeout: FPGA stopped responding.")
                 break
